@@ -15,7 +15,35 @@ export function initDb(file) {
   } catch {
     data = { seq: 0, facturas: [] };
   }
+  if (!data.clientes) data.clientes = [];
   return data;
+}
+
+/** Devuelve todas las facturas con su registro completo (para reportes/totales). */
+export function todasFacturas() {
+  return data.facturas;
+}
+
+/** Guarda/actualiza un cliente por CUIT. */
+export function guardarCliente(c) {
+  if (!c || !c.cuit) return;
+  const cuit = String(c.cuit).replace(/\D/g, "");
+  if (!cuit) return;
+  const idx = data.clientes.findIndex((x) => x.cuit === cuit);
+  const reg = { cuit, nombre: c.nombre || "", condicion: c.condicion || "", domicilio: c.domicilio || "" };
+  if (idx >= 0) data.clientes[idx] = reg;
+  else data.clientes.push(reg);
+  guardar();
+}
+
+/** Lista clientes guardados (con búsqueda opcional por nombre o CUIT). */
+export function listarClientes(q = "") {
+  let arr = data.clientes;
+  if (q) {
+    const s = String(q).toLowerCase();
+    arr = arr.filter((c) => (c.nombre || "").toLowerCase().includes(s) || c.cuit.includes(s));
+  }
+  return arr.slice().sort((a, b) => (a.nombre || "").localeCompare(b.nombre || ""));
 }
 
 function guardar() {

@@ -12,6 +12,9 @@ export default function Facturas() {
   const [msg, setMsg] = useState(null);
   const [nota, setNota] = useState(null); // { clase, f }
   const [working, setWorking] = useState(false);
+  const [compartir, setCompartir] = useState(null); // { f }
+  const [cmedio, setCmedio] = useState("whatsapp");
+  const [cdest, setCdest] = useState("");
 
   async function cargar(query = "") {
     setLoading(true);
@@ -38,6 +41,16 @@ export default function Facturas() {
       } else {
         setMsg("Rechazada: " + (res.observaciones || []).map((o) => o.msg).join(" · "));
       }
+    } catch (e) { setMsg("Error: " + (e?.message || e)); }
+    finally { setWorking(false); }
+  }
+
+  async function confirmarCompartir() {
+    setWorking(true);
+    try {
+      await window.api.compartirFactura({ id: compartir.f.id, medio: cmedio, destino: cdest });
+      setCompartir(null); setCdest("");
+      setMsg("Se abrió " + (cmedio === "whatsapp" ? "WhatsApp" : "el correo") + " y se mostró el PDF para adjuntar.");
     } catch (e) { setMsg("Error: " + (e?.message || e)); }
     finally { setWorking(false); }
   }
@@ -75,6 +88,7 @@ export default function Facturas() {
                 <td className="cae">{f.cae || "—"}</td>
                 <td className="acciones">
                   <button className="ghost mini" onClick={() => imprimir(f.id)}>Reimprimir</button>
+                  <button className="ghost mini" onClick={() => { setCompartir({ f }); setCmedio("whatsapp"); setCdest(""); }}>Compartir</button>
                   {f.clase === "FACTURA" && (
                     <>
                       <button className="ghost mini" onClick={() => setNota({ clase: "NC", f })}>N. Crédito</button>
@@ -96,6 +110,26 @@ export default function Facturas() {
           <div className="modal-btns">
             <button className="ghost" onClick={() => setNota(null)} disabled={working}>Cancelar</button>
             <button onClick={confirmarNota} disabled={working}>{working ? "Emitiendo…" : "Sí, emitir"}</button>
+          </div>
+        </div></div>
+      )}
+
+      {compartir && (
+        <div className="modal-bg"><div className="modal">
+          <h2>Compartir comprobante</h2>
+          <p><b>{comp(compartir.f)}</b> · {money(compartir.f.total)}</p>
+          <div className="medio-tabs">
+            <button className={cmedio === "whatsapp" ? "" : "ghost"} onClick={() => setCmedio("whatsapp")}>WhatsApp</button>
+            <button className={cmedio === "email" ? "" : "ghost"} onClick={() => setCmedio("email")}>Email</button>
+          </div>
+          <label className="fld" style={{ marginTop: 14 }}>
+            <span>{cmedio === "whatsapp" ? "Teléfono (con cód. de país, ej. 5493756...)" : "Email del cliente"}</span>
+            <input value={cdest} onChange={(e) => setCdest(e.target.value)} placeholder={cmedio === "whatsapp" ? "5493756123456" : "cliente@correo.com"} />
+          </label>
+          <p className="hint-share">Se abre {cmedio === "whatsapp" ? "WhatsApp" : "el correo"} con el mensaje y se muestra el PDF para que lo adjuntes con un arrastre.</p>
+          <div className="modal-btns">
+            <button className="ghost" onClick={() => setCompartir(null)} disabled={working}>Cancelar</button>
+            <button onClick={confirmarCompartir} disabled={working}>{working ? "Abriendo…" : "Compartir"}</button>
           </div>
         </div></div>
       )}

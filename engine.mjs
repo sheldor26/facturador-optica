@@ -10,7 +10,7 @@ import QRCode from "qrcode";
 import { Arca, CbteTipo, IvaTipo, DocTipo, CondicionIva } from "@ramiidv/arca-facturacion";
 import { attachTokenPersistence, setTokensDir } from "./ta-store.mjs";
 import { renderFacturaHTML, codigoComprobante } from "./factura-template.mjs";
-import { initDb, guardarFactura, listarFacturas, getFactura, contarFacturas } from "./db.mjs";
+import { initDb, guardarFactura, listarFacturas, getFactura, contarFacturas, todasFacturas, guardarCliente, listarClientes } from "./db.mjs";
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 let DATA_DIR = ROOT; // carpeta donde viven cert, clave, emisor, logo, base y tokens
@@ -152,6 +152,7 @@ async function consultarPadronCuit(cuit) {
   if (ids.includes(32)) condicion = "IVA Sujeto Exento";          // 32 = IVA exento
   else if (ids.includes(30)) condicion = "IVA Responsable Inscripto"; // 30 = IVA
   else if (esMono) condicion = "Responsable Monotributo";
+  guardarCliente({ cuit: String(cuit), nombre, condicion, domicilio });
   return { cuit, nombre, condicion, domicilio, estado: get("estadoClave") };
 }
 
@@ -224,6 +225,7 @@ export async function emitir({ receptorCond, docNro, nombre, domicilio, condVent
     qr,
     raw: result.raw,
   };
+  if (map.a && nombre) guardarCliente({ cuit: docNroNum, nombre, condicion: receptorCond, domicilio });
   const id = Number(guardarFactura(record, now.toISOString()));
   return { ok: true, id, record, nombreArchivo: nombreArchivo(record) };
 }
@@ -352,7 +354,62 @@ export function importarFacturasIniciales() {
   return n;
 }
 
-export { listarFacturas, getFactura, contarFacturas };
+export { listarFacturas, getFactura, contarFacturas, listarClientes };
+
+// ---- Inicio: totales del día y del mes ----
+function hoyYmd() {
+  const d = new Date();
+  return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
+}
+const signo = (f) => (f.clase === "NC" ? -1 : 1); // las NC restan
+
+export function resumenInicio() {
+  const todas = todasFacturas();
+  const hoy = hoyYmd();
+  const mes = hoy.slice(0, 6);
+  const neto = (arr) => arr.reduce((s, f) => s + signo(f) * (f.total || 0), 0);
+  const cuenta = (arr) => arr.filter((f) => f.clase === "FACTURA").length;
+  const deHoy = todas.filter((f) => f.fecha === hoy);
+  const deMes = todas.filter((f) => (f.fecha || "").startsWith(mes));
+  const ultimas = todas.slice(-6).reverse().map((f) => ({
+    id: f.id, clase: f.clase, tipo: f.tipo, ptoVta: f.ptoVta, numero: f.numero, fecha: f.fecha, total: f.total, receptor: f.receptorNombre,
+  }));
+  return {
+    hoy: { total: neto(deHoy), count: cuenta(deHoy) },
+    mes: { total: neto(deMes), count: cuenta(deMes) },
+    ultimas,
+  };
+}
+
+// ---- Reportes ----
+export function reporte({ desde, hasta } = {}) {
+  const en = todasFacturas().filter((f) => (!desde || f.fecha >= desde) && (!hasta || f.fecha <= hasta));
+  let neto = 0, iva = 0, total = 0;
+  const filas = en.map((f) => {
+    const imp = f.record?.importes || {};
+    const sgn = signo(f);
+    neto += sgn * (imp.neto || 0); iva += sgn * (imp.iva || 0); total += sgn * (f.total || 0);
+    return { clase: f.clase, tipo: f.tipo, ptoVta: f.ptoVta, numero: f.numero, fecha: f.fecha, receptor: f.receptorNombre, neto: imp.neto || 0, iva: imp.iva || 0, total: f.total || 0, cae: f.cae };
+  }).sort((a, b) => a.fecha.localeCompare(b.fecha));
+  return { filas, totales: { neto, iva, total, count: en.length } };
+}
+
+const CLASE_TXT = { FACTURA: "Factura", NC: "Nota de Crédito", ND: "Nota de Débito" };
+const numAr = (n) => Number(n || 0).toFixed(2).replace(".", ",");
+
+/** Genera el CSV del reporte (separador ; y decimales con coma, para Excel ARG). */
+export function reporteCSV(filtro) {
+  const { filas, totales } = reporte(filtro);
+  const fmtF = (s) => `${s.slice(6, 8)}/${s.slice(4, 6)}/${s.slice(0, 4)}`;
+  const head = ["Fecha", "Comprobante", "Pto Vta", "Número", "Cliente", "Neto", "IVA", "Total", "CAE"];
+  const rows = filas.map((f) => [
+    fmtF(f.fecha), `${CLASE_TXT[f.clase] || f.clase} ${f.tipo}`, String(f.ptoVta).padStart(5, "0"), String(f.numero).padStart(8, "0"),
+    f.receptor, numAr(f.neto), numAr(f.iva), numAr(f.total), f.cae || "",
+  ]);
+  rows.push([]);
+  rows.push(["", "", "", "", "TOTALES", numAr(totales.neto), numAr(totales.iva), numAr(totales.total), ""]);
+  return [head, ...rows].map((r) => r.map((c) => `"${String(c ?? "").replace(/"/g, '""')}"`).join(";")).join("\r\n");
+}
 
 /** Genera el HTML de un comprobante guardado, por id. */
 export async function comprobanteHTMLPorId(id, copias) {

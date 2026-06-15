@@ -36,7 +36,7 @@ body { margin: 0; font-family: -apple-system, Arial, Helvetica, sans-serif; colo
 .alert { background: #fbe6e3; color: var(--err); padding: 12px 14px; border-radius: 8px; margin-bottom: 18px; font-size: 14px; }
 .alert button { margin-left: 10px; }
 
-.cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; }
 .card { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; }
 .card-label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; }
 .card-big { font-size: 24px; font-weight: 700; color: var(--brand); margin: 8px 0 4px; }
@@ -68,6 +68,19 @@ button.ghost:hover { background: #e1e7f1; }
 .grid td.empty { text-align: center; color: var(--muted); padding: 28px; }
 .grid td.acciones { display: flex; gap: 6px; justify-content: flex-end; }
 button.mini { padding: 5px 10px; font-size: 12px; }
+
+/* Rango de fechas (reportes) */
+.rng { display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: var(--muted); }
+.rng input { padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; font-size: 13px; }
+
+/* Tabla compacta del inicio */
+.mini-grid { margin-top: 8px; }
+.mini-grid td { font-size: 13px; }
+
+/* Compartir */
+.medio-tabs { display: flex; gap: 8px; margin-top: 6px; }
+.medio-tabs button { flex: 1; }
+.hint-share { font-size: 12px; color: var(--muted); margin-top: 10px; }
 
 /* Opciones */
 .opt { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 22px 24px; max-width: 720px; }

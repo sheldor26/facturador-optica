@@ -47,6 +47,44 @@ ipcMain.handle("padron:consultar", async (_e, cuit) => (await engine()).consulta
 ipcMain.handle("factura:emitir", async (_e, opts) => (await engine()).emitir(opts));
 ipcMain.handle("factura:nota", async (_e, opts) => (await engine()).emitirNota(opts));
 ipcMain.handle("facturas:listar", async (_e, q) => (await engine()).listarFacturas({ q }));
+ipcMain.handle("app:resumen", async () => (await engine()).resumenInicio());
+ipcMain.handle("clientes:listar", async (_e, q) => (await engine()).listarClientes(q));
+ipcMain.handle("reporte:datos", async (_e, filtro) => (await engine()).reporte(filtro));
+ipcMain.handle("reporte:exportar", async (_e, filtro) => {
+  const eng = await engine();
+  const csv = eng.reporteCSV(filtro);
+  const res = await dialog.showSaveDialog({
+    title: "Exportar reporte",
+    defaultPath: path.join(eng.getConfig().carpetaFacturas, "reporte.csv"),
+    filters: [{ name: "CSV (Excel)", extensions: ["csv"] }],
+  });
+  if (res.canceled) return null;
+  fs.writeFileSync(res.filePath, "﻿" + csv, "utf-8"); // BOM para que Excel respete acentos
+  await shell.openPath(res.filePath);
+  return res.filePath;
+});
+ipcMain.handle("factura:compartir", async (_e, { id, medio, destino }) => {
+  const eng = await engine();
+  const row = eng.getFactura(id);
+  if (!row) throw new Error("Comprobante no encontrado");
+  const r = row.record;
+  const html = await eng.comprobanteHTMLPorId(id);
+  const cfg = eng.getConfig();
+  fs.mkdirSync(cfg.carpetaFacturas, { recursive: true });
+  const outPath = path.join(cfg.carpetaFacturas, eng.nombreArchivo(r));
+  await htmlToPdf(html, outPath);
+  const claseTxt = { FACTURA: "Factura", NC: "Nota de Crédito", ND: "Nota de Débito" }[r.clase] || r.clase;
+  const comp = `${claseTxt} ${r.tipo} ${String(r.ptoVta).padStart(5, "0")}-${String(r.numero).padStart(8, "0")}`;
+  const total = Number(r.importes?.total || 0).toLocaleString("es-AR", { minimumFractionDigits: 2 });
+  const msg = `Hola! Te paso tu comprobante ${comp} por $ ${total}. CAE ${r.cae}.`;
+  if (medio === "whatsapp") {
+    await shell.openExternal(`https://wa.me/${String(destino || "").replace(/\D/g, "")}?text=${encodeURIComponent(msg)}`);
+  } else {
+    await shell.openExternal(`mailto:${encodeURIComponent(destino || "")}?subject=${encodeURIComponent(comp)}&body=${encodeURIComponent(msg)}`);
+  }
+  shell.showItemInFolder(outPath); // revela el PDF para adjuntarlo
+  return outPath;
+});
 ipcMain.handle("factura:imprimir", async (_e, id) => {
   const eng = await engine();
   const row = eng.getFactura(id);

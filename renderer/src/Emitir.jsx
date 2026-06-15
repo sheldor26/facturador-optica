@@ -23,6 +23,17 @@ export default function Emitir() {
   const [padronMsg, setPadronMsg] = useState(null);
   const [padronErr, setPadronErr] = useState(false);
   const [opciones, setOpciones] = useState(null); // varias personas con el mismo DNI
+  const [clientes, setClientes] = useState([]);
+
+  useEffect(() => { window.api.listarClientes().then(setClientes).catch(() => {}); }, []);
+
+  function aplicarCliente(c) {
+    if (!c) return;
+    setReceptorCond(c.condicion || "IVA Responsable Inscripto");
+    setNombre(c.nombre || "");
+    setDomicilio(c.domicilio || "");
+    setPadronMsg(`✓ ${c.nombre} (guardado)`); setPadronErr(false); setOpciones(null);
+  }
 
   function aplicarPersona(p) {
     setReceptorCond(p.condicion);
@@ -137,9 +148,13 @@ export default function Emitir() {
           <label className="fld">
             <span>CUIT / DNI — buscar en ARCA</span>
             <div className="cuit-row">
-              <input value={docNro} onChange={(e) => setDocNro(e.target.value)} placeholder="30-12345678-9"
+              <input list="clientes-guardados" value={docNro} placeholder="30-12345678-9 o elegí un cliente guardado"
+                onChange={(e) => { const v = e.target.value; setDocNro(v); const c = clientes.find((x) => x.cuit === v.replace(/\D/g, "")); if (c) aplicarCliente(c); }}
                 onKeyDown={(e) => e.key === "Enter" && buscarPadron()} />
               <button className="ghost" onClick={buscarPadron} disabled={buscando}>{buscando ? "Buscando…" : "Buscar"}</button>
+              <datalist id="clientes-guardados">
+                {clientes.map((c) => <option key={c.cuit} value={c.cuit}>{c.nombre}</option>)}
+              </datalist>
             </div>
             {padronMsg && <small className={padronErr ? "bad" : "good"}>{padronMsg}</small>}
           </label>
