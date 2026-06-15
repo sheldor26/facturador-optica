@@ -8,8 +8,8 @@
     "app:electron": "wait-on tcp:127.0.0.1:5173 && electron .",
     "app": "concurrently -k -n vite,electron \"npm:app:vite\" \"npm:app:electron\"",
     "app:build": "vite build",
-    "dist:mac": "vite build && electron-builder --mac",
-    "dist:win": "vite build && electron-builder --win --x64"
+    "dist:mac": "vite build && electron-builder --mac --publish never",
+    "dist:win": "vite build && electron-builder --win --x64 --publish never"
   },
   "keywords": [],
   "author": "",
