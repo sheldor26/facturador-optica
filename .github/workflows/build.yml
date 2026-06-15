@@ -1,0 +1,40 @@
+name: Compilar instalador Windows
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch: # permite ejecutarlo a mano desde la pestaña Actions
+
+permissions:
+  contents: write # para poder publicar el instalador en Releases
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Bajar el código
+        uses: actions/checkout@v4
+
+      - name: Instalar Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Compilar instalador
+        run: npm run dist:win
+
+      - name: Subir como artefacto (descargable desde Actions)
+        uses: actions/upload-artifact@v4
+        with:
+          name: Facturador-Optica-Windows
+          path: release/*.exe
+
+      - name: Publicar en Releases (descarga directa)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ultima-version
+          name: Última versión
+          files: release/*.exe

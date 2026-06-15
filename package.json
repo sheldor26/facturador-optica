@@ -1,0 +1,74 @@
+{
+  "name": "facturador-optica",
+  "version": "1.0.0",
+  "description": "",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "app:vite": "vite",
+    "app:electron": "wait-on tcp:127.0.0.1:5173 && electron .",
+    "app": "concurrently -k -n vite,electron \"npm:app:vite\" \"npm:app:electron\"",
+    "app:build": "vite build",
+    "dist:mac": "vite build && electron-builder --mac",
+    "dist:win": "vite build && electron-builder --win --x64"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "build": {
+    "appId": "com.carballo.facturador",
+    "productName": "Facturador Optica",
+    "asar": false,
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "electron/**",
+      "dist/**",
+      "engine.mjs",
+      "factura-template.mjs",
+      "ta-store.mjs",
+      "arca-tls-fix.mjs",
+      "db.mjs",
+      "!**/*.pem",
+      "!**/*.crt",
+      "!**/*.key",
+      "!**/*.csr",
+      "!emisor.json",
+      "!.tokens/**",
+      "!facturas/**",
+      "!facturador.db*",
+      "!scripts/**",
+      "!docs/**"
+    ],
+    "win": {
+      "target": "nsis",
+      "artifactName": "Facturador-Optica-Setup-${version}.exe"
+    },
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.business"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "dependencies": {
+    "@ramiidv/arca-facturacion": "^2.1.0",
+    "pdfkit": "^0.19.1",
+    "qrcode": "^1.5.4",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "undici": "^8.5.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^6.0.2",
+    "concurrently": "^10.0.3",
+    "electron": "^42.4.0",
+    "electron-builder": "^26.15.3",
+    "vite": "^8.0.16",
+    "wait-on": "^9.0.10"
+  }
+}

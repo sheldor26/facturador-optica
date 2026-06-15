@@ -1,0 +1,24 @@
+# NUNCA subir: secretos fiscales, datos del emisor y comprobantes
+*.key
+*.crt
+*.csr
+*.pem
+.env
+.env.*
+
+# Datos personales / runtime (cada PC tiene los suyos)
+emisor.json
+datos.json
+datos.json.tmp
+logo.png
+facturas/
+.tokens/
+tokens.json
+openssl-arca.cnf
+
+# Build / dependencias
+node_modules/
+dist/
+release/
+.DS_Store
+config.json
