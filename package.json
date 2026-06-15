@@ -22,6 +22,11 @@
     "directories": {
       "output": "release"
     },
+    "publish": {
+      "provider": "github",
+      "owner": "sheldor26",
+      "repo": "facturador-optica"
+    },
     "files": [
       "electron/**",
       "dist/**",
@@ -57,6 +62,7 @@
   },
   "dependencies": {
     "@ramiidv/arca-facturacion": "^2.1.0",
+    "electron-updater": "^6.8.9",
     "pdfkit": "^0.19.1",
     "qrcode": "^1.5.4",
     "react": "^19.2.7",

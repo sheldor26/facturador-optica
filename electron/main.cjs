@@ -6,6 +6,7 @@ const path = require("node:path");
 const fs = require("node:fs");
 const os = require("node:os");
 const { pathToFileURL } = require("node:url");
+const { autoUpdater } = require("electron-updater");
 
 const isDev = !app.isPackaged;
 
@@ -121,6 +122,8 @@ app.whenReady().then(async () => {
     carpetaDefault: path.join(app.getPath("documents"), "Facturas Óptica"),
   });
   createWindow();
+  // Auto-actualización: chequea GitHub Releases y baja la versión nueva si hay.
+  if (!isDev) autoUpdater.checkForUpdatesAndNotify().catch(() => {});
 });
 app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });

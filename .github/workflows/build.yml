@@ -37,4 +37,7 @@ jobs:
         with:
           tag_name: ultima-version
           name: Última versión
-          files: release/*.exe
+          files: |
+            release/*.exe
+            release/latest.yml
+            release/*.blockmap
