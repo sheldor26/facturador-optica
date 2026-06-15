@@ -5,6 +5,7 @@ import Rapida from "./Rapida.jsx";
 import Emitir from "./Emitir.jsx";
 import Facturas from "./Facturas.jsx";
 import Reportes from "./Reportes.jsx";
+import Clientes from "./Clientes.jsx";
 import Opciones from "./Opciones.jsx";
 
 const NAV = [
@@ -12,6 +13,7 @@ const NAV = [
   { key: "rapida", label: "Factura rápida" },
   { key: "emitir", label: "Emitir factura" },
   { key: "facturas", label: "Facturas emitidas" },
+  { key: "clientes", label: "Clientes" },
   { key: "reportes", label: "Reportes" },
   { key: "opciones", label: "Opciones" },
 ];
@@ -51,6 +53,7 @@ export default function App() {
         {view === "rapida" && <Rapida />}
         {view === "emitir" && <Emitir />}
         {view === "facturas" && <Facturas />}
+        {view === "clientes" && <Clientes />}
         {view === "reportes" && <Reportes />}
         {view === "opciones" && <Opciones />}
       </main>

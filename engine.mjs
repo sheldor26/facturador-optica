@@ -10,7 +10,7 @@ import QRCode from "qrcode";
 import { Arca, CbteTipo, IvaTipo, DocTipo, CondicionIva } from "@ramiidv/arca-facturacion";
 import { attachTokenPersistence, setTokensDir } from "./ta-store.mjs";
 import { renderFacturaHTML, codigoComprobante } from "./factura-template.mjs";
-import { initDb, guardarFactura, listarFacturas, getFactura, contarFacturas, todasFacturas, guardarCliente, listarClientes } from "./db.mjs";
+import { initDb, guardarFactura, listarFacturas, getFactura, contarFacturas, todasFacturas, guardarCliente, listarClientes, eliminarCliente } from "./db.mjs";
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 let DATA_DIR = ROOT; // carpeta donde viven cert, clave, emisor, logo, base y tokens
@@ -354,7 +354,7 @@ export function importarFacturasIniciales() {
   return n;
 }
 
-export { listarFacturas, getFactura, contarFacturas, listarClientes };
+export { listarFacturas, getFactura, contarFacturas, listarClientes, guardarCliente, eliminarCliente };
 
 // ---- Inicio: totales del día y del mes ----
 function hoyYmd() {

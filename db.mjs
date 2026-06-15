@@ -36,6 +36,14 @@ export function guardarCliente(c) {
   guardar();
 }
 
+/** Elimina un cliente por CUIT. */
+export function eliminarCliente(cuit) {
+  const c = String(cuit).replace(/\D/g, "");
+  const antes = data.clientes.length;
+  data.clientes = data.clientes.filter((x) => x.cuit !== c);
+  if (data.clientes.length !== antes) guardar();
+}
+
 /** Lista clientes guardados (con búsqueda opcional por nombre o CUIT). */
 export function listarClientes(q = "") {
   let arr = data.clientes;
