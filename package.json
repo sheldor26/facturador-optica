@@ -1,6 +1,6 @@
 {
   "name": "facturador-optica",
-  "version": "1.0.4",
+  "version": "1.0.6",
   "description": "",
   "main": "electron/main.cjs",
   "scripts": {
@@ -37,6 +37,7 @@
       "db.mjs",
       "cloud.mjs",
       "cloud-config.json",
+      "assets/**",
       "!**/*.pem",
       "!**/*.crt",
       "!**/*.key",

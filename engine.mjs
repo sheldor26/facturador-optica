@@ -298,10 +298,13 @@ export async function emitirNota({ clase, facturaId }) {
 export async function comprobanteHTML(record, copias) {
   const emisor = getEmisor();
   let logoDataUrl = null;
-  if (emisor.logo && fs.existsSync(dp(emisor.logo))) {
-    const ext = path.extname(emisor.logo).slice(1).toLowerCase();
+  // 1) logo cargado por el usuario en esta PC; 2) si no hay, el logo incluido en el programa.
+  let logoPath = emisor.logo && fs.existsSync(dp(emisor.logo)) ? dp(emisor.logo) : null;
+  if (!logoPath && fs.existsSync(path.join(ROOT, "assets", "logo.png"))) logoPath = path.join(ROOT, "assets", "logo.png");
+  if (logoPath) {
+    const ext = path.extname(logoPath).slice(1).toLowerCase();
     const mime = ext === "svg" ? "image/svg+xml" : ext === "jpg" ? "image/jpeg" : `image/${ext}`;
-    logoDataUrl = `data:${mime};base64,${fs.readFileSync(dp(emisor.logo)).toString("base64")}`;
+    logoDataUrl = `data:${mime};base64,${fs.readFileSync(logoPath).toString("base64")}`;
   }
   const qrDataUrl = await QRCode.toDataURL(record.qr, { margin: 0, width: 240 });
   return renderFacturaHTML({ emisor, f: record, qrDataUrl, logoDataUrl, copias });

@@ -6,9 +6,13 @@ export default function Setup({ onReady }) {
   const [cert, setCert] = useState(null); // { nombre, contenido }
   const [key, setKey] = useState(null);
   const [logo, setLogo] = useState(null); // { nombre, base64 }
+  // Datos del comercio pre-cargados: en una PC nueva ya vienen completos,
+  // solo hay que elegir el certificado y la clave y dar Guardar.
   const [em, setEm] = useState({
-    nombreFantasia: "", razonSocial: "", cuit: "", condicionIva: "IVA Responsable Inscripto",
-    domicilio: "", iibb: "", inicioActividades: "", rubro: "Óptica", telefono: "", web: "",
+    nombreFantasia: "ÓPTICA CARBALLO", razonSocial: "MIRANDE JUAN LEOPOLDO", cuit: "20168521821",
+    condicionIva: "IVA Responsable Inscripto",
+    domicilio: "Av Lavalle 2686 - Gob. Ing. V. Virasoro, Corrientes", iibb: "20168521821",
+    inicioActividades: "01/09/2000", rubro: "", telefono: "", web: "",
   });
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState(null);
@@ -58,7 +62,7 @@ export default function Setup({ onReady }) {
 
         <h3>Datos del comercio</h3>
         <div className="setup-grid">
-          <label className="fld"><span>Nombre del comercio</span><input value={em.nombreFantasia} onChange={(e) => set("nombreFantasia", e.target.value)} placeholder="Laboratorio Óptico Carballo" /></label>
+          <label className="fld"><span>Nombre del comercio</span><input value={em.nombreFantasia} onChange={(e) => set("nombreFantasia", e.target.value)} placeholder="Óptica Carballo" /></label>
           <label className="fld"><span>Razón social</span><input value={em.razonSocial} onChange={(e) => set("razonSocial", e.target.value)} placeholder="MIRANDE JUAN LEOPOLDO" /></label>
           <label className="fld"><span>CUIT</span><input value={em.cuit} onChange={(e) => set("cuit", e.target.value)} placeholder="20168521821" />{em.cuit && !cuitOk && <small className="bad">11 dígitos</small>}</label>
           <label className="fld"><span>Condición frente al IVA</span><select value={em.condicionIva} onChange={(e) => set("condicionIva", e.target.value)}>{COND_IVA.map((c) => <option key={c}>{c}</option>)}</select></label>

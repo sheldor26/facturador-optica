@@ -11,6 +11,7 @@ emisor.json
 datos.json
 datos.json.tmp
 logo.png
+!assets/logo.png
 facturas/
 .tokens/
 tokens.json
