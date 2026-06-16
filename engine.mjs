@@ -10,7 +10,11 @@ import QRCode from "qrcode";
 import { Arca, CbteTipo, IvaTipo, DocTipo, CondicionIva } from "@ramiidv/arca-facturacion";
 import { attachTokenPersistence, setTokensDir } from "./ta-store.mjs";
 import { renderFacturaHTML, codigoComprobante } from "./factura-template.mjs";
-import { initDb, guardarFactura, listarFacturas, getFactura, contarFacturas, todasFacturas, guardarCliente, listarClientes, eliminarCliente } from "./db.mjs";
+import { initDb, guardarFactura, listarFacturas, getFactura, contarFacturas, todasFacturas, guardarCliente as dbGuardarCliente, listarClientes, eliminarCliente as dbEliminarCliente, mergeClientes, mergeFacturas } from "./db.mjs";
+import * as cloud from "./cloud.mjs";
+
+let PC = "PC";
+export function setPC(n) { PC = n || "PC"; }
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 let DATA_DIR = ROOT; // carpeta donde viven cert, clave, emisor, logo, base y tokens
@@ -231,6 +235,7 @@ export async function emitir({ receptorCond, docNro, nombre, domicilio, condVent
   };
   if (!esCF && nombre) guardarCliente({ cuit: docNroNum, nombre, condicion: receptorCond, domicilio });
   const id = Number(guardarFactura(record, now.toISOString()));
+  cloud.pushFactura(record, PC).catch(() => {});
   return { ok: true, id, record, nombreArchivo: nombreArchivo(record) };
 }
 
@@ -285,6 +290,7 @@ export async function emitirNota({ clase, facturaId }) {
     qr, raw: result.raw,
   };
   const id = Number(guardarFactura(record, now.toISOString()));
+  cloud.pushFactura(record, PC).catch(() => {});
   return { ok: true, id, record, nombreArchivo: nombreArchivo(record) };
 }
 
@@ -358,7 +364,30 @@ export function importarFacturasIniciales() {
   return n;
 }
 
-export { listarFacturas, getFactura, contarFacturas, listarClientes, guardarCliente, eliminarCliente };
+export { listarFacturas, getFactura, contarFacturas, listarClientes };
+
+// Guardar/eliminar cliente: local + nube (la nube best-effort, no bloquea).
+export function guardarCliente(c) { dbGuardarCliente(c); cloud.pushCliente(c).catch(() => {}); }
+export function eliminarCliente(cuit) { dbEliminarCliente(cuit); cloud.deleteCliente(cuit).catch(() => {}); }
+
+/** Sincroniza con la nube: baja todo lo de las otras PCs y sube lo local que falte. */
+export async function sincronizarNube() {
+  try {
+    if (!(await cloud.nubeDisponible())) return { ok: false, offline: true };
+    const [cloudFac, cloudCli] = await Promise.all([cloud.fetchFacturas(), cloud.fetchClientes()]);
+    mergeFacturas(cloudFac);
+    mergeClientes(cloudCli);
+    const keys = new Set(cloudFac.map((r) => `${r.clase}-${r.tipo}-${r.pto_vta}-${r.numero}`));
+    for (const f of todasFacturas()) {
+      if (!keys.has(`${f.clase}-${f.tipo}-${f.ptoVta}-${f.numero}`)) await cloud.pushFactura(f.record, PC).catch(() => {});
+    }
+    const cuits = new Set(cloudCli.map((c) => String(c.cuit)));
+    for (const c of listarClientes()) {
+      if (!cuits.has(c.cuit)) await cloud.pushCliente(c).catch(() => {});
+    }
+    return { ok: true };
+  } catch (e) { return { ok: false, error: e.message }; }
+}
 
 // ---- Inicio: totales del día y del mes ----
 function hoyYmd() {

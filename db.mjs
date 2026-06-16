@@ -101,3 +101,35 @@ export function getFactura(id) {
 export function contarFacturas() {
   return data.facturas.length;
 }
+
+/** Mezcla clientes que vienen de la nube en la base local. */
+export function mergeClientes(arr) {
+  for (const c of arr || []) {
+    const cuit = String(c.cuit).replace(/\D/g, "");
+    if (!cuit) continue;
+    const i = data.clientes.findIndex((x) => x.cuit === cuit);
+    const reg = { cuit, nombre: c.nombre || "", condicion: c.condicion || "", domicilio: c.domicilio || "" };
+    if (i >= 0) data.clientes[i] = reg; else data.clientes.push(reg);
+  }
+  guardar();
+}
+
+/** Mezcla facturas que vienen de la nube (las que no estén ya local). */
+export function mergeFacturas(arr) {
+  let nuevas = 0;
+  for (const row of arr || []) {
+    const rec = row.data;
+    if (!rec) continue;
+    const key = `${rec.clase || "FACTURA"}-${rec.tipo}-${rec.ptoVta}-${rec.numero}`;
+    if (data.facturas.some((f) => f.key === key)) continue;
+    const id = ++data.seq;
+    data.facturas.push({
+      id, key, clase: rec.clase || "FACTURA", tipo: rec.tipo, ptoVta: rec.ptoVta, numero: rec.numero,
+      fecha: rec.fecha, cae: rec.cae || null, receptorNombre: rec.receptor?.nombre || "Consumidor Final",
+      total: rec.importes?.total ?? 0, creadoEn: row.creado_en || new Date().toISOString(), record: rec,
+    });
+    nuevas++;
+  }
+  if (nuevas) guardar();
+  return nuevas;
+}

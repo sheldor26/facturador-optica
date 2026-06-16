@@ -35,6 +35,8 @@
       "ta-store.mjs",
       "arca-tls-fix.mjs",
       "db.mjs",
+      "cloud.mjs",
+      "cloud-config.json",
       "!**/*.pem",
       "!**/*.crt",
       "!**/*.key",

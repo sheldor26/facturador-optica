@@ -47,6 +47,7 @@ ipcMain.handle("padron:consultar", async (_e, cuit) => (await engine()).consulta
 ipcMain.handle("factura:emitir", async (_e, opts) => (await engine()).emitir(opts));
 ipcMain.handle("factura:nota", async (_e, opts) => (await engine()).emitirNota(opts));
 ipcMain.handle("facturas:listar", async (_e, q) => (await engine()).listarFacturas({ q }));
+ipcMain.handle("nube:sincronizar", async () => (await engine()).sincronizarNube());
 ipcMain.handle("app:resumen", async () => (await engine()).resumenInicio());
 ipcMain.handle("clientes:listar", async (_e, q) => (await engine()).listarClientes(q));
 ipcMain.handle("clientes:guardar", async (_e, c) => { (await engine()).guardarCliente(c); return true; });
@@ -161,6 +162,8 @@ app.whenReady().then(async () => {
     dataDir,
     carpetaDefault: path.join(app.getPath("documents"), "Facturas Óptica"),
   });
+  eng.setPC(os.hostname());
+  eng.sincronizarNube().catch(() => {}); // baja lo de las otras PCs y sube lo local
   createWindow();
   // Auto-actualización: chequea GitHub Releases y baja la versión nueva si hay.
   if (!isDev) autoUpdater.checkForUpdatesAndNotify().catch(() => {});

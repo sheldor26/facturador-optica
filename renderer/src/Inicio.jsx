@@ -18,6 +18,7 @@ export default function Inicio() {
     setEstado("cargando");
     setError(null);
     try {
+      await window.api.sincronizar().catch(() => {}); // baja lo de las otras PCs
       setResumen(await window.api.resumen());
       const st = await window.api.serverStatus();
       const ok = st.AppServer === "OK" && st.DbServer === "OK" && st.AuthServer === "OK";

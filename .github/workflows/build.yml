@@ -23,6 +23,13 @@ jobs:
       - name: Instalar dependencias
         run: npm ci
 
+      - name: Crear config de la nube (desde secreto)
+        shell: bash
+        run: |
+          cat > cloud-config.json << 'JSON'
+          ${{ secrets.CLOUD_CONFIG }}
+          JSON
+
       - name: Compilar instalador
         run: npm run dist:win
 
