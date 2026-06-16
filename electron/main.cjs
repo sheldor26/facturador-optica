@@ -70,7 +70,7 @@ ipcMain.handle("factura:compartir", async (_e, { id, medio, destino }) => {
   const row = eng.getFactura(id);
   if (!row) throw new Error("Comprobante no encontrado");
   const r = row.record;
-  const html = await eng.comprobanteHTMLPorId(id);
+  const html = await eng.comprobanteHTMLPorId(id, ["ORIGINAL"]); // al cliente le mandamos el original
   const cfg = eng.getConfig();
   fs.mkdirSync(cfg.carpetaFacturas, { recursive: true });
   const outPath = path.join(cfg.carpetaFacturas, eng.nombreArchivo(r));
@@ -87,11 +87,11 @@ ipcMain.handle("factura:compartir", async (_e, { id, medio, destino }) => {
   shell.showItemInFolder(outPath); // revela el PDF para adjuntarlo
   return outPath;
 });
-ipcMain.handle("factura:imprimir", async (_e, id) => {
+ipcMain.handle("factura:imprimir", async (_e, id, copias) => {
   const eng = await engine();
   const row = eng.getFactura(id);
   if (!row) throw new Error("Comprobante no encontrado");
-  const html = await eng.comprobanteHTMLPorId(id); // triplicado por defecto
+  const html = await eng.comprobanteHTMLPorId(id, copias); // copias: ["ORIGINAL","DUPLICADO"] por defecto
   const nombre = eng.nombreArchivo(row.record);
   const cfg = eng.getConfig();
   let outPath;

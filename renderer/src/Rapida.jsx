@@ -11,6 +11,7 @@ export default function Rapida() {
   const [step, setStep] = useState("form"); // form | confirm | emitiendo | ok | error
   const [result, setResult] = useState(null);
   const [errMsg, setErrMsg] = useState(null);
+  const [imprimirOriginal, setImprimirOriginal] = useState(false);
 
   const total = Number(importe) || 0;
   const puede = total > 0 && desc.trim();
@@ -26,7 +27,7 @@ export default function Rapida() {
         ptoVta: PTO_VTA,
         items: [{ desc: desc.trim(), cantidad: 1, precioUnit: total, unidad: "Unidades" }],
       });
-      if (res.ok) { setResult(res); setStep("ok"); window.api.imprimirFactura(res.id); }
+      if (res.ok) { setResult(res); setStep("ok"); window.api.imprimirFactura(res.id, imprimirOriginal ? ["ORIGINAL", "DUPLICADO"] : ["DUPLICADO"]); }
       else { setErrMsg((res.observaciones || []).map((o) => `[${o.code}] ${o.msg}`).join(" · ") || "Rechazada por ARCA"); setStep("error"); }
     } catch (e) { setErrMsg(e?.message || String(e)); setStep("error"); }
   }
@@ -76,6 +77,10 @@ export default function Rapida() {
           <datalist id="desc-presets">
             {DESCRIPCIONES.map((d) => <option key={d} value={d} />)}
           </datalist>
+        </label>
+        <label className="chk-print">
+          <input type="checkbox" checked={imprimirOriginal} onChange={(e) => setImprimirOriginal(e.target.checked)} />
+          <span>Imprimir <b>original</b> para el cliente (el duplicado se imprime igual)</span>
         </label>
         <button className="emit-btn" disabled={!puede} onClick={() => setStep("confirm")}>
           Emitir Factura B — {money(total)}

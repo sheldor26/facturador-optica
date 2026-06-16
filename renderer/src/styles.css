@@ -131,6 +131,8 @@ table.items select { width: 100%; padding: 8px 8px; border: 1px solid var(--line
 .tot-box .tot-total { font-size: 20px; font-weight: 700; color: var(--brand); }
 .tot-box .tot-total span { color: var(--muted); font-weight: 400; }
 
+.chk-print { display: flex; align-items: center; gap: 9px; font-size: 13px; color: #333; margin: 4px 0 12px; cursor: pointer; }
+.chk-print input { width: 16px; height: 16px; }
 .emit-btn { width: 100%; padding: 13px; font-size: 15px; font-weight: 600; }
 .emit-btn:disabled { background: #c7ccd6; cursor: not-allowed; }
 

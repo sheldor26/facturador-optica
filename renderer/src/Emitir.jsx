@@ -19,6 +19,7 @@ export default function Emitir() {
   const [step, setStep] = useState("form"); // form | confirm | emitiendo | ok | error
   const [result, setResult] = useState(null);
   const [errMsg, setErrMsg] = useState(null);
+  const [imprimirOriginal, setImprimirOriginal] = useState(true);
   const [buscando, setBuscando] = useState(false);
   const [padronMsg, setPadronMsg] = useState(null);
   const [padronErr, setPadronErr] = useState(false);
@@ -56,7 +57,8 @@ export default function Emitir() {
     finally { setBuscando(false); }
   }
 
-  const esA = receptorCond === "IVA Responsable Inscripto" || receptorCond === "Responsable Monotributo";
+  const esA = receptorCond === "IVA Responsable Inscripto"; // solo RI recibe Factura A
+  const esCF = receptorCond === "Consumidor Final"; // CF no lleva datos del receptor
   const tipo = esA ? "A" : "B";
 
   const totales = useMemo(() => {
@@ -92,8 +94,14 @@ export default function Emitir() {
   // Productos cobrables (con precio) y todo lo que va al detalle (incluye notas sin valor)
   const reales = items.filter((it) => !it.nota && it.desc.trim() && Number(it.precioUnit) > 0 && Number(it.cantidad) > 0);
   const itemsAEmitir = items.filter((it) => (it.nota ? it.desc.trim() : it.desc.trim() && Number(it.precioUnit) > 0 && Number(it.cantidad) > 0));
-  const cuitOk = !esA || /^\d{11}$/.test(String(docNro).replace(/\D/g, ""));
-  const puedeEmitir = reales.length > 0 && cuitOk && (!esA || nombre.trim());
+  const cuitOk = esCF || /^\d{11}$/.test(String(docNro).replace(/\D/g, ""));
+  const puedeEmitir = reales.length > 0 && cuitOk && (esCF || nombre.trim());
+
+  async function guardarClienteActual() {
+    await window.api.guardarCliente({ cuit: String(docNro).replace(/\D/g, ""), nombre, condicion: receptorCond, domicilio });
+    setClientes(await window.api.listarClientes());
+    setPadronMsg("Cliente guardado ✓"); setPadronErr(false);
+  }
 
   function reset() {
     setReceptorCond("Consumidor Final"); setDocNro(""); setNombre(""); setDomicilio("");
@@ -110,7 +118,7 @@ export default function Emitir() {
           : { desc: it.desc, cantidad: Number(it.cantidad), precioUnit: Number(it.precioUnit), unidad: it.unidad })),
         ptoVta: PTO_VTA,
       });
-      if (res.ok) { setResult(res); setStep("ok"); window.api.imprimirFactura(res.id); }
+      if (res.ok) { setResult(res); setStep("ok"); window.api.imprimirFactura(res.id, imprimirOriginal ? ["ORIGINAL", "DUPLICADO"] : ["DUPLICADO"]); }
       else { setErrMsg((res.observaciones || []).map((o) => `[${o.code}] ${o.msg}`).join(" · ") || "Rechazada por ARCA"); setStep("error"); }
     } catch (e) { setErrMsg(e?.message || String(e)); setStep("error"); }
   }
@@ -164,13 +172,14 @@ export default function Emitir() {
               {CLIENTES.map((c) => <option key={c}>{c}</option>)}
             </select>
           </label>
-          {esA && (
+          {!esCF && (
             <>
               {!cuitOk && docNro && <small className="bad">El CUIT debe tener 11 dígitos.</small>}
               <label className="fld"><span>Razón social / Nombre</span>
                 <input value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Empresa S.A." /></label>
               <label className="fld"><span>Domicilio</span>
                 <input value={domicilio} onChange={(e) => setDomicilio(e.target.value)} placeholder="Calle 123 - Ciudad" /></label>
+              {cuitOk && nombre.trim() && <button className="ghost" style={{ alignSelf: "flex-start" }} onClick={guardarClienteActual}>Guardar este cliente</button>}
             </>
           )}
           <label className="fld"><span>Condición de venta</span>
@@ -212,6 +221,10 @@ export default function Emitir() {
             <div className="tot-total"><span>Total</span>{money(totales.total)}</div>
           </div>
 
+          <label className="chk-print">
+            <input type="checkbox" checked={imprimirOriginal} onChange={(e) => setImprimirOriginal(e.target.checked)} />
+            <span>Imprimir <b>original</b> (para el cliente). El <b>duplicado</b> se imprime siempre.</span>
+          </label>
           <button className="emit-btn" disabled={!puedeEmitir} onClick={() => setStep("confirm")}>
             Emitir Factura {tipo} — {money(totales.total)}
           </button>

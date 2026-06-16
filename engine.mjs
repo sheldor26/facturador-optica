@@ -163,7 +163,8 @@ const RATE = 0.21; // IVA 21% (única alícuota por ahora)
 const COND_MAP = {
   "Consumidor Final": { cond: CondicionIva.CONSUMIDOR_FINAL, a: false },
   "IVA Responsable Inscripto": { cond: CondicionIva.RESPONSABLE_INSCRIPTO, a: true },
-  "Responsable Monotributo": { cond: CondicionIva.MONOTRIBUTISTA, a: true },
+  "Responsable Monotributo": { cond: CondicionIva.MONOTRIBUTISTA, a: false }, // monotributo recibe Factura B
+
   "IVA Sujeto Exento": { cond: CondicionIva.EXENTO, a: false },
 };
 
@@ -176,8 +177,9 @@ export async function emitir({ receptorCond, docNro, nombre, domicilio, condVent
   const map = COND_MAP[receptorCond] || COND_MAP["Consumidor Final"];
   const tipo = map.a ? "A" : "B";
   const cbteTipo = tipo === "A" ? CbteTipo.FACTURA_A : CbteTipo.FACTURA_B;
-  const docTipo = map.a ? DocTipo.CUIT : DocTipo.CONSUMIDOR_FINAL;
-  const docNroNum = map.a ? Number(String(docNro).replace(/\D/g, "")) : 0;
+  const esCF = receptorCond === "Consumidor Final"; // solo CF va sin datos del receptor
+  const docTipo = esCF ? DocTipo.CONSUMIDOR_FINAL : DocTipo.CUIT;
+  const docNroNum = esCF ? 0 : Number(String(docNro).replace(/\D/g, ""));
 
   const lineItems = [];
   const display = [];
@@ -213,8 +215,8 @@ export async function emitir({ receptorCond, docNro, nombre, domicilio, condVent
     clase: "FACTURA", tipo, ptoVta, numero, fecha,
     cae: result.cae, caeVencimiento: result.caeVencimiento,
     receptor: {
-      docLabel: map.a ? "CUIT" : "CUIT/DNI",
-      docNro: docNro ? String(docNro) : "-",
+      docLabel: esCF ? "CUIT/DNI" : "CUIT",
+      docNro: esCF ? "-" : String(docNro),
       nombre: nombre || "Consumidor Final",
       condicion: receptorCond,
       domicilio: domicilio || "-",
@@ -225,7 +227,7 @@ export async function emitir({ receptorCond, docNro, nombre, domicilio, condVent
     qr,
     raw: result.raw,
   };
-  if (map.a && nombre) guardarCliente({ cuit: docNroNum, nombre, condicion: receptorCond, domicilio });
+  if (!esCF && nombre) guardarCliente({ cuit: docNroNum, nombre, condicion: receptorCond, domicilio });
   const id = Number(guardarFactura(record, now.toISOString()));
   return { ok: true, id, record, nombreArchivo: nombreArchivo(record) };
 }

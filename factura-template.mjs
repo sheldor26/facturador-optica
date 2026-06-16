@@ -11,7 +11,7 @@ const tiene = (s) => s && !String(s).startsWith("(completar");
 export const CODIGOS = { FACTURA: { A: "001", B: "006" }, ND: { A: "002", B: "007" }, NC: { A: "003", B: "008" } };
 export const codigoComprobante = (clase, tipo) => (CODIGOS[clase] || CODIGOS.FACTURA)[tipo || "B"];
 
-export function renderFacturaHTML({ emisor, f, qrDataUrl, logoDataUrl, copias = ["ORIGINAL", "DUPLICADO", "TRIPLICADO"] }) {
+export function renderFacturaHTML({ emisor, f, qrDataUrl, logoDataUrl, copias = ["ORIGINAL", "DUPLICADO"] }) {
   const tipo = f.tipo || "B";
   const clase = f.clase || "FACTURA"; // FACTURA | NC | ND
   const titulo = clase === "NC" ? "NOTA DE CRÉDITO" : clase === "ND" ? "NOTA DE DÉBITO" : "FACTURA";
