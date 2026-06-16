@@ -62,10 +62,11 @@ export default function Emitir() {
   const tipo = esA ? "A" : "B";
 
   const totales = useMemo(() => {
+    // El precio que se ingresa es siempre FINAL (con IVA); la app calcula el neto.
     const suma = items.filter((it) => !it.nota).reduce((acc, it) => acc + Number(it.cantidad || 0) * Number(it.precioUnit || 0), 0);
-    if (esA) { const neto = suma; const iva = neto * RATE; return { neto, iva, total: neto + iva }; }
-    const neto = suma / (1 + RATE); return { neto, iva: suma - neto, total: suma };
-  }, [items, esA]);
+    const neto = suma / (1 + RATE);
+    return { neto, iva: suma - neto, total: suma };
+  }, [items]);
 
   const tbodyRef = useRef(null);
   const focusLast = useRef(false);
@@ -192,7 +193,7 @@ export default function Emitir() {
         <section className="panel">
           <h3>Ítems</h3>
           <table className="items">
-            <thead><tr><th>Descripción</th><th>Cant.</th><th>U. Medida</th><th>{esA ? "Precio neto" : "Precio (con IVA)"}</th><th></th></tr></thead>
+            <thead><tr><th>Descripción</th><th>Cant.</th><th>U. Medida</th><th>Precio (con IVA)</th><th></th></tr></thead>
             <tbody ref={tbodyRef}>
               {items.map((it, i) => (it.nota ? (
                 <tr key={i} className="nota-row">

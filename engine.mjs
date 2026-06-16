@@ -186,13 +186,15 @@ export async function emitir({ receptorCond, docNro, nombre, domicilio, condVent
   for (const it of items) {
     if (it.nota) { display.push({ codigo: "-", desc: (it.desc || "").toUpperCase(), nota: true }); continue; } // línea sin valor (ej. N° afiliado)
     const cant = Number(it.cantidad);
-    const precio = Number(it.precioUnit);
-    const lineNeto = tipo === "B" ? round2((cant * precio) / (1 + RATE)) : round2(cant * precio);
+    const precio = Number(it.precioUnit); // siempre se ingresa el precio FINAL (con IVA)
+    const lineNeto = round2((cant * precio) / (1 + RATE)); // la app calcula el neto sola
+    const unitNeto = round2(precio / (1 + RATE));
     lineItems.push({ neto: lineNeto, iva: IvaTipo.IVA_21 });
     display.push({
       codigo: it.codigo || "-", desc: (it.desc || "").toUpperCase(), cantidad: cant,
-      unidad: it.unidad || "Unidades", precioUnit: precio, bonifPct: 0,
-      subtotal: round2(cant * precio),
+      unidad: it.unidad || "Unidades", bonifPct: 0,
+      precioUnit: tipo === "A" ? unitNeto : precio, // A muestra neto (discrimina IVA); B muestra final
+      subtotal: tipo === "A" ? lineNeto : round2(cant * precio),
     });
   }
 
