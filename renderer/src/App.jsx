@@ -85,9 +85,9 @@ export default function App() {
         {view === "rapida" && <Rapida />}
         {view === "emitir" && <Emitir />}
         {view === "pedidos" && <Pedidos toast={toast} />}
-        {view === "facturas" && <Facturas />}
-        {view === "clientes" && <Clientes />}
-        {view === "reportes" && <Reportes />}
+        {view === "facturas" && <Facturas toast={toast} />}
+        {view === "clientes" && <Clientes toast={toast} />}
+        {view === "reportes" && <Reportes toast={toast} />}
         {view === "opciones" && <Opciones />}
       </main>
 

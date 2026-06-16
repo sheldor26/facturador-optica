@@ -5,11 +5,10 @@ const fmt = (s) => `${s.slice(6, 8)}/${s.slice(4, 6)}/${s.slice(0, 4)}`;
 const money = (n) => "$ " + Number(n).toLocaleString("es-AR", { minimumFractionDigits: 2 });
 const comp = (f) => `${CLASE[f.clase] || f.clase} ${f.tipo} ${String(f.pto_vta).padStart(5, "0")}-${String(f.numero).padStart(8, "0")}`;
 
-export default function Facturas() {
+export default function Facturas({ toast }) {
   const [items, setItems] = useState([]);
   const [q, setQ] = useState("");
   const [loading, setLoading] = useState(true);
-  const [msg, setMsg] = useState(null);
   const [nota, setNota] = useState(null); // { clase, f }
   const [working, setWorking] = useState(false);
   const [compartir, setCompartir] = useState(null); // { f }
@@ -24,9 +23,8 @@ export default function Facturas() {
   useEffect(() => { cargar(); }, []);
 
   async function imprimir(id) {
-    setMsg("Generando PDF…");
-    try { await window.api.imprimirFactura(id); setMsg("PDF abierto en el visor."); }
-    catch (e) { setMsg("Error: " + (e?.message || e)); }
+    try { await window.api.imprimirFactura(id); toast?.("PDF abierto en el visor."); }
+    catch (e) { toast?.(e?.message || String(e), "error"); }
   }
 
   async function confirmarNota() {
@@ -35,13 +33,13 @@ export default function Facturas() {
       const res = await window.api.emitirNota({ clase: nota.clase, facturaId: nota.f.id });
       if (res.ok) {
         setNota(null);
-        setMsg(`${CLASE[nota.clase]} emitida.`);
+        toast?.(`${CLASE[nota.clase]} emitida.`);
         await cargar(q);
         window.api.imprimirFactura(res.id);
       } else {
-        setMsg("Rechazada: " + (res.observaciones || []).map((o) => o.msg).join(" · "));
+        toast?.("Rechazada: " + (res.observaciones || []).map((o) => o.msg).join(" · "), "error");
       }
-    } catch (e) { setMsg("Error: " + (e?.message || e)); }
+    } catch (e) { toast?.(e?.message || String(e), "error"); }
     finally { setWorking(false); }
   }
 
@@ -50,8 +48,8 @@ export default function Facturas() {
     try {
       await window.api.compartirFactura({ id: compartir.f.id, medio: cmedio, destino: cdest });
       setCompartir(null); setCdest("");
-      setMsg("Se abrió " + (cmedio === "whatsapp" ? "WhatsApp" : "el correo") + " y se mostró el PDF para adjuntar.");
-    } catch (e) { setMsg("Error: " + (e?.message || e)); }
+      toast?.("Se abrió " + (cmedio === "whatsapp" ? "WhatsApp" : "el correo") + " y se mostró el PDF para adjuntar.");
+    } catch (e) { toast?.(e?.message || String(e), "error"); }
     finally { setWorking(false); }
   }
 
@@ -66,7 +64,6 @@ export default function Facturas() {
           onKeyDown={(e) => e.key === "Enter" && cargar(q)}
         />
         <button onClick={() => cargar(q)}>Buscar</button>
-        {msg && <span className="msg">{msg}</span>}
       </div>
 
       <table className="grid">
@@ -75,7 +72,7 @@ export default function Facturas() {
         </thead>
         <tbody>
           {loading ? (
-            <tr><td colSpan="6" className="empty">Cargando…</td></tr>
+            <tr><td colSpan="6" className="empty"><span className="spin-row"><span className="spinner" /> Cargando…</span></td></tr>
           ) : items.length === 0 ? (
             <tr><td colSpan="6" className="empty">Sin comprobantes todavía.</td></tr>
           ) : (

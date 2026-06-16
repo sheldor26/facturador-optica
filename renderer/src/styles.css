@@ -211,3 +211,9 @@ table.items input.num { width: 102px; text-align: right; }
 .toast.ok { border-left-color: #34d399; }
 .toast.error { border-left-color: #f87171; }
 @keyframes slideIn { from { transform: translateX(20px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+/* ===== Spinner ===== */
+.spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; vertical-align: middle; }
+.spinner.lt { border-color: rgba(255,255,255,.3); border-top-color: #fff; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.spin-row { display: inline-flex; align-items: center; gap: 9px; color: var(--muted); }

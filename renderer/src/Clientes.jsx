@@ -3,12 +3,11 @@ import React, { useEffect, useState } from "react";
 const COND = ["IVA Responsable Inscripto", "Responsable Monotributo", "IVA Sujeto Exento", "Consumidor Final"];
 const vacio = () => ({ cuit: "", nombre: "", condicion: "IVA Responsable Inscripto", domicilio: "" });
 
-export default function Clientes() {
+export default function Clientes({ toast }) {
   const [items, setItems] = useState([]);
   const [q, setQ] = useState("");
   const [form, setForm] = useState(vacio());
   const [buscando, setBuscando] = useState(false);
-  const [msg, setMsg] = useState(null);
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
   async function cargar(query = "") { setItems(await window.api.listarClientes(query)); }
@@ -16,14 +15,14 @@ export default function Clientes() {
 
   async function buscar() {
     const d = String(form.cuit).replace(/\D/g, "");
-    if (!/^\d{7,8}$/.test(d) && !/^\d{11}$/.test(d)) { setMsg("Poné un CUIT (11) o DNI (7-8)."); return; }
-    setBuscando(true); setMsg(null);
+    if (!/^\d{7,8}$/.test(d) && !/^\d{11}$/.test(d)) { toast?.("Poné un CUIT (11) o DNI (7-8).", "error"); return; }
+    setBuscando(true);
     try {
       const { personas } = await window.api.consultarPadron(d);
       const p = personas[0];
       setForm({ cuit: String(p.cuit), nombre: p.nombre || "", condicion: p.condicion, domicilio: p.domicilio || "" });
-      if (personas.length > 1) setMsg("Había varias personas; tomé la primera. Editá si hace falta.");
-    } catch (e) { setMsg(e?.message || String(e)); }
+      if (personas.length > 1) toast?.("Había varias personas; tomé la primera. Editá si hace falta.");
+    } catch (e) { toast?.(e?.message || String(e), "error"); }
     finally { setBuscando(false); }
   }
 
@@ -32,7 +31,7 @@ export default function Clientes() {
 
   async function guardar() {
     await window.api.guardarCliente(form);
-    setForm(vacio()); setMsg("Cliente guardado.");
+    setForm(vacio()); toast?.("Cliente guardado.");
     await cargar(q);
   }
   async function eliminar(cuit) {
@@ -42,7 +41,7 @@ export default function Clientes() {
 
   return (
     <>
-      <header className="topbar"><h1>Clientes</h1>{msg && <span className="pill online">{msg}</span>}</header>
+      <header className="topbar"><h1>Clientes</h1></header>
 
       <section className="panel" style={{ marginBottom: 18 }}>
         <h3>Registrar cliente</h3>

@@ -14,24 +14,21 @@ function hoyISO() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-export default function Reportes() {
+export default function Reportes({ toast }) {
   const [desde, setDesde] = useState(primerDiaMes());
   const [hasta, setHasta] = useState(hoyISO());
   const [data, setData] = useState(null);
-  const [msg, setMsg] = useState(null);
 
   async function generar() {
-    setMsg(null);
     setData(await window.api.reporteDatos({ desde: ymd(desde), hasta: ymd(hasta) }));
   }
   useEffect(() => { generar(); }, []);
 
   async function exportar() {
-    setMsg("Exportando…");
     try {
       const r = await window.api.reporteExportar({ desde: ymd(desde), hasta: ymd(hasta) });
-      setMsg(r ? "Exportado y abierto en Excel." : null);
-    } catch (e) { setMsg("Error: " + (e?.message || e)); }
+      if (r) toast?.("Exportado y abierto en Excel.");
+    } catch (e) { toast?.(e?.message || String(e), "error"); }
   }
 
   const t = data?.totales;
@@ -44,7 +41,6 @@ export default function Reportes() {
         <label className="rng"><span>Hasta</span><input type="date" value={hasta} onChange={(e) => setHasta(e.target.value)} /></label>
         <button onClick={generar}>Ver</button>
         <button className="ghost" onClick={exportar}>Exportar a Excel</button>
-        {msg && <span className="msg">{msg}</span>}
       </div>
 
       {t && (
@@ -62,7 +58,7 @@ export default function Reportes() {
         </thead>
         <tbody>
           {!data ? (
-            <tr><td colSpan="6" className="empty">Cargando…</td></tr>
+            <tr><td colSpan="6" className="empty"><span className="spin-row"><span className="spinner" /> Cargando…</span></td></tr>
           ) : data.filas.length === 0 ? (
             <tr><td colSpan="6" className="empty">Sin comprobantes en ese período.</td></tr>
           ) : (

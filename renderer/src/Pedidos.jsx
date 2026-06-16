@@ -47,7 +47,7 @@ export default function Pedidos({ toast }) {
         </thead>
         <tbody>
           {loading ? (
-            <tr><td colSpan="6" className="empty">Cargando pedidos…</td></tr>
+            <tr><td colSpan="6" className="empty"><span className="spin-row"><span className="spinner" /> Cargando pedidos…</span></td></tr>
           ) : items.length === 0 ? (
             <tr><td colSpan="6" className="empty">No hay pedidos pendientes de facturar.</td></tr>
           ) : (
