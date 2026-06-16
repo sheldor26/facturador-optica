@@ -61,6 +61,23 @@ export async function deleteCliente(cuit) {
   const c = String(cuit || "").replace(/\D/g, "");
   if (c) await req(`facturador_clientes?cuit=eq.${c}`, { method: "DELETE" });
 }
+// ---- Pedidos de la tienda web ----
+export async function fetchPedidos() {
+  const sel = "id,order_number,status,payment_status,paid_at,customer_name,customer_dni,total_cents,created_at,invoice_cae";
+  const r = await req(`orders?select=${sel}&invoice_cae=is.null&payment_status=eq.approved&order=created_at.desc&limit=100`);
+  return r.ok ? r.json() : [];
+}
+export async function getPedidoConItems(id) {
+  const r = await req(`orders?id=eq.${id}&select=*,order_items(*)`);
+  const rows = r.ok ? await r.json() : [];
+  const order = rows[0] || null;
+  const items = order?.order_items || [];
+  return { order, items };
+}
+export async function marcarPedidoFacturado(id, fields) {
+  await req(`orders?id=eq.${id}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify(fields) });
+}
+
 export async function pushFactura(rec, pc) {
   await req("facturador_facturas", {
     method: "POST",

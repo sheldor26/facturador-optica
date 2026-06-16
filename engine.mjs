@@ -389,6 +389,53 @@ export async function sincronizarNube() {
   } catch (e) { return { ok: false, error: e.message }; }
 }
 
+// ---- Pedidos de la tienda web ----
+
+/** Lista los pedidos pagados que todavía no tienen factura. */
+export async function pedidosPendientes() {
+  try {
+    const ped = await cloud.fetchPedidos();
+    return ped.map((o) => ({
+      id: o.id, numero: o.order_number, cliente: o.customer_name || "—",
+      dni: o.customer_dni || "", total: (o.total_cents || 0) / 100,
+      pago: o.payment_status || o.status || "", pagado: !!o.paid_at,
+      fecha: (o.created_at || "").slice(0, 10),
+    }));
+  } catch { return []; }
+}
+
+/** Factura un pedido de la web (Factura B, consumidor final) y marca el CAE en el pedido. */
+export async function facturarPedido(orderId) {
+  const { order, items } = await cloud.getPedidoConItems(orderId);
+  if (!order) throw new Error("Pedido no encontrado.");
+  if (order.invoice_cae) throw new Error("Ese pedido ya está facturado.");
+  const total = (order.total_cents || 0) / 100;
+  if (total <= 0) throw new Error("El pedido no tiene importe.");
+
+  // Detalle: si no hay descuento, una línea por producto + envío; si hay, una sola línea por el total.
+  let lineas;
+  if (!order.discount_cents && items.length) {
+    lineas = items.map((it) => ({
+      desc: it.product_name + (it.variant_sku ? ` (${it.variant_sku})` : ""),
+      cantidad: it.quantity || 1,
+      precioUnit: ((it.line_total_cents || 0) / 100) / (it.quantity || 1),
+      unidad: "Unidades",
+    }));
+    if (order.shipping_cents > 0) lineas.push({ desc: "Envío", cantidad: 1, precioUnit: order.shipping_cents / 100, unidad: "Unidades" });
+  } else {
+    const nombres = items.map((it) => it.product_name).filter(Boolean).join(", ").slice(0, 120) || "Artículos de óptica";
+    lineas = [{ desc: `Pedido web #${order.order_number} - ${nombres}`, cantidad: 1, precioUnit: total, unidad: "Unidades" }];
+  }
+
+  const res = await emitir({ receptorCond: "Consumidor Final", condVenta: "Otra", ptoVta: 7, items: lineas });
+  if (res.ok) {
+    const r = res.record;
+    const comp = `Factura ${r.tipo} ${String(r.ptoVta).padStart(5, "0")}-${String(r.numero).padStart(8, "0")}`;
+    await cloud.marcarPedidoFacturado(orderId, { invoice_id: comp, invoice_cae: r.cae }).catch(() => {});
+  }
+  return res;
+}
+
 // ---- Inicio: totales del día y del mes ----
 function hoyYmd() {
   const d = new Date();

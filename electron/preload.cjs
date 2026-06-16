@@ -16,6 +16,8 @@ contextBridge.exposeInMainWorld("api", {
   listarFacturas: (q) => ipcRenderer.invoke("facturas:listar", q),
   imprimirFactura: (id, copias) => ipcRenderer.invoke("factura:imprimir", id, copias),
   sincronizar: () => ipcRenderer.invoke("nube:sincronizar"),
+  listarPedidos: () => ipcRenderer.invoke("pedidos:listar"),
+  facturarPedido: (id) => ipcRenderer.invoke("pedido:facturar", id),
   resumen: () => ipcRenderer.invoke("app:resumen"),
   listarClientes: (q) => ipcRenderer.invoke("clientes:listar", q),
   guardarCliente: (c) => ipcRenderer.invoke("clientes:guardar", c),
