@@ -78,6 +78,30 @@ export async function marcarPedidoFacturado(id, fields) {
   await req(`orders?id=eq.${id}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify(fields) });
 }
 
+// ---- Token de ARCA compartido entre PCs ----
+// El TA (token+sign) dura ~12h y ARCA da uno solo por certificado. Lo guardamos en
+// la nube para que todas las PCs reusen el mismo y ninguna quede sin poder conectarse.
+export async function fetchToken(service) {
+  const r = await req(`facturador_token?service=eq.${encodeURIComponent(service)}&select=token,sign,expiration`);
+  if (!r.ok) return null;
+  const rows = await r.json();
+  return rows[0] || null;
+}
+export async function saveToken(service, ticket, pc) {
+  await req("facturador_token", {
+    method: "POST",
+    headers: { Prefer: "resolution=merge-duplicates" },
+    body: JSON.stringify({
+      service,
+      token: ticket.token,
+      sign: ticket.sign,
+      expiration: new Date(ticket.expirationTime).toISOString(),
+      updated_by: pc || null,
+      updated_at: new Date().toISOString(),
+    }),
+  });
+}
+
 export async function pushFactura(rec, pc) {
   await req("facturador_facturas", {
     method: "POST",

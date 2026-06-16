@@ -8,7 +8,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import QRCode from "qrcode";
 import { Arca, CbteTipo, IvaTipo, DocTipo, CondicionIva } from "@ramiidv/arca-facturacion";
-import { attachTokenPersistence, setTokensDir } from "./ta-store.mjs";
+import { attachTokenPersistence, setTokensDir, saveTicket } from "./ta-store.mjs";
 import { renderFacturaHTML, codigoComprobante } from "./factura-template.mjs";
 import { initDb, guardarFactura, listarFacturas, getFactura, contarFacturas, todasFacturas, guardarCliente as dbGuardarCliente, listarClientes, eliminarCliente as dbEliminarCliente, mergeClientes, mergeFacturas } from "./db.mjs";
 import * as cloud from "./cloud.mjs";
@@ -64,6 +64,96 @@ function getArca() {
   return _arca;
 }
 
+// ===========================================================================
+//  Token de ARCA: renovación automática + compartido por la nube
+// ---------------------------------------------------------------------------
+//  El TA (token de acceso) dura ~12h y ARCA entrega UNO solo por certificado.
+//  Con varias PCs usando el mismo certificado, si cada una pide el suyo se chocan
+//  ("ya posee un TA valido"). Solución: el TA vive en la nube; una PC lo renueva
+//  y todas lo reusan. Un "keeper" lo mantiene fresco para no quedar nunca sin
+//  poder conectarse a ARCA.
+const SVC_WSFE = "wsfe";
+const USABLE_MS = 3 * 60_000;       // un TA sirve si le quedan más de 3 min
+const RENOVAR_ANTES_MS = 30 * 60_000; // empezar a renovar cuando faltan <30 min
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const expMs = (t) => (t ? new Date(t.expirationTime).getTime() : 0);
+const usable = (t) => expMs(t) - Date.now() > USABLE_MS;
+
+/** Adopta el TA de la nube si es mejor (más nuevo) que el local. Devuelve el TA o null. */
+async function adoptarDeNube(service) {
+  try {
+    const ct = await cloud.fetchToken(service);
+    if (!ct) return null;
+    const exp = new Date(ct.expiration).getTime();
+    const local = getArca().wsaa.ticketCache.get(service);
+    if (exp - Date.now() > USABLE_MS && exp > expMs(local)) {
+      const ticket = { token: ct.token, sign: ct.sign, expirationTime: new Date(ct.expiration) };
+      getArca().wsaa.ticketCache.set(service, ticket);
+      saveTicket("prod", ticket, service);
+      return ticket;
+    }
+  } catch { /* nube no disponible: seguimos con lo local */ }
+  return null;
+}
+
+/** Fuerza un login nuevo en WSAA preservando el TA previo si falla. */
+async function renovarLogin(service) {
+  const wsaa = getArca().wsaa;
+  const previo = wsaa.ticketCache.get(service);
+  wsaa.clearTicket(service);
+  try {
+    return await wsaa.getAccessTicket(service); // dispara el login
+  } catch (e) {
+    if (previo) wsaa.ticketCache.set(service, previo); // no quedarse sin token
+    throw e;
+  }
+}
+
+/**
+ * Garantiza un TA usable para `service`, coordinado por la nube. NUNCA tira si todavía
+ * hay un token usable: prioriza no dejar a la PC sin conexión. Best-effort.
+ */
+export async function ensureTicket(service = SVC_WSFE) {
+  if (!estaConfigurado()) return null;
+  let local = getArca().wsaa.ticketCache.get(service);
+
+  // 1) El local sirve y no está por vencer → listo (no molestamos a ARCA).
+  if (usable(local) && expMs(local) - Date.now() > RENOVAR_ANTES_MS) return local;
+
+  // 2) ¿La nube tiene uno más nuevo? (otra PC pudo haberlo renovado)
+  const deNube = await adoptarDeNube(service);
+  if (deNube && expMs(deNube) - Date.now() > RENOVAR_ANTES_MS) return deNube;
+  local = getArca().wsaa.ticketCache.get(service);
+
+  // 3) Hay que renovar. Login con reintentos. Si ARCA responde "ya posee un TA valido"
+  //    es porque el actual sigue sirviendo → no es error, seguimos con ese.
+  for (let intento = 0; intento < 4; intento++) {
+    try {
+      const t = await renovarLogin(service);
+      await cloud.saveToken(service, t, PC).catch(() => {});
+      return t;
+    } catch (e) {
+      const adoptado = await adoptarDeNube(service); // ¿otra PC ya publicó uno fresco?
+      if (usable(adoptado)) return adoptado;
+      if (/ya posee/i.test(e?.message || "") && usable(local)) return local;
+      if (intento < 3) await sleep(2000 * (intento + 1));
+      else if (usable(local)) return local; // último recurso: el que tengamos
+      else throw e;
+    }
+  }
+  return getArca().wsaa.ticketCache.get(service);
+}
+
+let _keeper = null;
+/** Arranca el renovador automático en segundo plano (cada 5 min + al iniciar). */
+export function iniciarRenovadorToken() {
+  if (_keeper || !estaConfigurado()) return;
+  const tick = () => { ensureTicket(SVC_WSFE).catch(() => {}); };
+  tick();
+  _keeper = setInterval(tick, 5 * 60_000);
+  if (_keeper.unref) _keeper.unref();
+}
+
 /** Estado de los servidores de ARCA (no requiere auth). */
 export async function serverStatus() {
   return getArca().serverStatus();
@@ -71,6 +161,7 @@ export async function serverStatus() {
 
 /** Próximo número disponible para un tipo de comprobante en un punto de venta. */
 export async function proximoNumero(ptoVta, cbteTipo) {
+  await ensureTicket().catch(() => {});
   const ultimo = await getArca().ultimoComprobante(ptoVta, cbteTipo);
   return ultimo + 1;
 }
@@ -129,6 +220,7 @@ export async function consultarPadron(input) {
 }
 
 async function consultarPadronCuit(cuit) {
+  await ensureTicket("ws_sr_constancia_inscripcion").catch(() => {});
   const auth = await getArca().wsaa.getAccessTicket("ws_sr_constancia_inscripcion");
   const cuitRep = Number(getEmisor().cuit);
   const soap = `<?xml version="1.0" encoding="UTF-8"?>
@@ -178,6 +270,7 @@ const COND_MAP = {
  * Devuelve { ok, id, record, nombreArchivo } o { ok:false, observaciones }.
  */
 export async function emitir({ receptorCond, docNro, nombre, domicilio, condVenta, items, ptoVta }) {
+  await ensureTicket().catch(() => {});
   const map = COND_MAP[receptorCond] || COND_MAP["Consumidor Final"];
   const tipo = map.a ? "A" : "B";
   const cbteTipo = tipo === "A" ? CbteTipo.FACTURA_A : CbteTipo.FACTURA_B;
@@ -244,6 +337,7 @@ export async function emitir({ receptorCond, docNro, nombre, domicilio, condVent
  * ya emitida (por su id en la base). Toma cliente, ítems e importe de la original.
  */
 export async function emitirNota({ clase, facturaId }) {
+  await ensureTicket().catch(() => {});
   const row = getFactura(facturaId);
   if (!row) throw new Error("Comprobante original no encontrado.");
   const orig = row.record;
@@ -350,6 +444,7 @@ export function initEngine({ dataDir, carpetaDefault }) {
     : { ...CONFIG_DEFAULT };
   if (!_config.carpetaFacturas) _config.carpetaFacturas = carpetaDefault;
   guardarConfig();
+  iniciarRenovadorToken(); // mantiene el token de ARCA fresco y compartido
 }
 
 /** Importa los comprobantes reales ya emitidos (archivos facturas/*.json). */

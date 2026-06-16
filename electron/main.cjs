@@ -129,7 +129,13 @@ ipcMain.handle("setup:elegirArchivo", async (_e, tipo) => {
   if (tipo === "logo") return { nombre: path.basename(file), base64: fs.readFileSync(file).toString("base64") };
   return { nombre: path.basename(file), contenido: fs.readFileSync(file, "utf-8") };
 });
-ipcMain.handle("setup:guardar", async (_e, data) => { (await engine()).guardarSetup(data); return true; });
+ipcMain.handle("setup:guardar", async (_e, data) => {
+  const eng = await engine();
+  eng.guardarSetup(data);
+  eng.iniciarRenovadorToken(); // recién configurada: arrancar el renovador del token
+  eng.sincronizarNube().catch(() => {});
+  return true;
+});
 
 // ---- Configuración / opciones ----
 ipcMain.handle("config:get", async () => (await engine()).getConfig());
@@ -160,11 +166,11 @@ app.whenReady().then(async () => {
   // En dev usamos la carpeta del proyecto (cert.pem/key.pem/emisor.json ya están ahí);
   // en la app instalada, la carpeta de datos del usuario (cada PC la suya).
   const dataDir = isDev ? path.join(__dirname, "..") : app.getPath("userData");
+  eng.setPC(os.hostname()); // antes de initEngine: el renovador del token usa el nombre real
   eng.initEngine({
     dataDir,
     carpetaDefault: path.join(app.getPath("documents"), "Facturas Óptica"),
   });
-  eng.setPC(os.hostname());
   eng.sincronizarNube().catch(() => {}); // baja lo de las otras PCs y sube lo local
   createWindow();
   // Auto-actualización: chequea GitHub Releases y baja la versión nueva si hay.
