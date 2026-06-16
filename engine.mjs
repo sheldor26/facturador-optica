@@ -427,7 +427,17 @@ export async function facturarPedido(orderId) {
     lineas = [{ desc: `Pedido web #${order.order_number} - ${nombres}`, cantidad: 1, precioUnit: total, unidad: "Unidades" }];
   }
 
-  const res = await emitir({ receptorCond: "Consumidor Final", condVenta: "Otra", ptoVta: 7, items: lineas });
+  // Detectar A o B según el CUIT/DNI del comprador (consulta el padrón de ARCA).
+  let receptor = { receptorCond: "Consumidor Final", docNro: "", nombre: "", domicilio: "" };
+  if (order.customer_dni) {
+    try {
+      const { personas } = await consultarPadron(order.customer_dni);
+      const p = personas[0];
+      if (p) receptor = { receptorCond: p.condicion, docNro: String(p.cuit), nombre: p.nombre, domicilio: p.domicilio };
+    } catch { /* sin padrón → queda Consumidor Final (B) */ }
+  }
+
+  const res = await emitir({ ...receptor, condVenta: "Otra", ptoVta: 7, items: lineas });
   if (res.ok) {
     const r = res.record;
     const comp = `Factura ${r.tipo} ${String(r.ptoVta).padStart(5, "0")}-${String(r.numero).padStart(8, "0")}`;

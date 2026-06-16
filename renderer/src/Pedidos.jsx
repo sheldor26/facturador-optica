@@ -68,7 +68,7 @@ export default function Pedidos({ toast }) {
       {conf && (
         <div className="modal-bg"><div className="modal">
           <h2>Facturar pedido #{conf.numero}</h2>
-          <p>Se va a emitir una <b>Factura B</b> a Consumidor Final por <b>{money(conf.total)}</b>.</p>
+          <p>Se va a emitir la <b>factura</b> por <b>{money(conf.total)}</b>. El tipo (A o B) se decide según el CUIT/DNI del comprador{conf.dni ? ` (${conf.dni})` : ""}.</p>
           <p className="warn">Comprobante real y fiscal. Se marca el CAE en el pedido de la web.</p>
           <div className="modal-btns">
             <button className="ghost" onClick={() => setConf(null)} disabled={working}>Cancelar</button>
