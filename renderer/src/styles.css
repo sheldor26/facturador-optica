@@ -122,19 +122,29 @@ button.mini { padding: 6px 11px; font-size: 12px; }
 .cuit-row button { white-space: nowrap; }
 
 /* ===== Emitir ===== */
-.emitir { display: grid; grid-template-columns: 350px 1fr; gap: 18px; align-items: start; }
+.emitir { display: grid; grid-template-columns: minmax(0, 350px) minmax(0, 1fr); gap: 18px; align-items: start; }
+/* En ventanas que no son anchas, apilar los paneles para que la tabla de ítems
+   use todo el ancho y la columna Descripción no se aplaste. */
+@media (max-width: 1180px) { .emitir { grid-template-columns: 1fr; } }
 .panel { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px 22px; box-shadow: var(--shadow); }
 .panel h3 { margin: 0 0 15px; font-size: 14px; }
 .panel-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
 .panel-head h3 { margin: 0; }
 
-table.items { width: 100%; border-collapse: collapse; }
+/* table-layout fijo: las columnas se reparten el ancho del panel y nunca lo desbordan.
+   La Descripción (1ª col) absorbe el espacio sobrante; el resto tiene ancho acotado. */
+table.items { width: 100%; border-collapse: collapse; table-layout: fixed; }
 table.items th { text-align: left; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .4px; padding: 0 8px 8px; font-weight: 600; }
 table.items td { padding: 4px 8px 4px 0; vertical-align: middle; }
 table.items td:first-child { padding-left: 0; }
-table.items input, table.items select { width: 100%; padding: 9px 11px; border: 1px solid var(--line); border-radius: 9px; font-size: 13.5px; background: #fff; }
+table.items th:nth-child(2), table.items td:nth-child(2) { width: 62px; }   /* Cant. */
+table.items th:nth-child(3), table.items td:nth-child(3) { width: 92px; }   /* U. Medida */
+table.items th:nth-child(4), table.items td:nth-child(4) { width: 108px; }  /* Precio */
+table.items th:nth-child(5), table.items td:nth-child(5) { width: 70px; }   /* Desc. % */
+table.items th:nth-child(6), table.items td:nth-child(6) { width: 34px; }   /* quitar */
+table.items input, table.items select { width: 100%; padding: 9px 11px; border: 1px solid var(--line); border-radius: 9px; font-size: 13.5px; background: #fff; box-sizing: border-box; }
 table.items input:focus, table.items select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
-table.items input.num { width: 102px; text-align: right; }
+table.items input.num { width: 100%; text-align: right; }
 .nota-row input { background: #fcfae8; font-style: italic; }
 .add-row { display: flex; gap: 10px; margin-top: 12px; }
 .del { background: #f6f0f0; color: var(--err); padding: 7px 12px; font-size: 16px; line-height: 1; box-shadow: none; }
