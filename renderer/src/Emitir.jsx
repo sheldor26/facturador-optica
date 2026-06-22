@@ -6,7 +6,7 @@ const CLIENTES = ["Consumidor Final", "IVA Responsable Inscripto", "Responsable 
 const U_MEDIDA = ["Unidades", "Par"];
 const COND_VENTA = ["Otra", "Contado", "Cuenta Corriente", "Tarjeta", "Transferencia"];
 const money = (n) => "$ " + Number(n || 0).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const itemVacio = () => ({ desc: "", cantidad: 1, precioUnit: "", unidad: "Unidades", nota: false });
+const itemVacio = () => ({ desc: "", cantidad: 1, precioUnit: "", unidad: "Unidades", descPct: "", nota: false });
 const notaVacia = () => ({ desc: "", cantidad: "", precioUnit: "", unidad: "", nota: true });
 
 export default function Emitir() {
@@ -57,13 +57,21 @@ export default function Emitir() {
     finally { setBuscando(false); }
   }
 
-  const esA = receptorCond === "IVA Responsable Inscripto"; // solo RI recibe Factura A
-  const esCF = receptorCond === "Consumidor Final"; // CF no lleva datos del receptor
+  const esCFsel = receptorCond === "Consumidor Final"; // lo elegido en el desplegable (controla mostrar campos)
+  const cuitDigits = String(docNro).replace(/\D/g, "");
+  const sinDatos = !cuitDigits && !nombre.trim(); // no se agregó ningún dato del cliente
+  const esCF = esCFsel || sinDatos; // sin datos → Consumidor Final (Factura B)
+  const condEfectiva = esCF ? "Consumidor Final" : receptorCond;
+  const esA = condEfectiva === "IVA Responsable Inscripto"; // solo RI recibe Factura A
   const tipo = esA ? "A" : "B";
 
   const totales = useMemo(() => {
-    // El precio que se ingresa es siempre FINAL (con IVA); la app calcula el neto.
-    const suma = items.filter((it) => !it.nota).reduce((acc, it) => acc + Number(it.cantidad || 0) * Number(it.precioUnit || 0), 0);
+    // El precio que se ingresa es siempre FINAL (con IVA); el descuento (%) lo baja por línea.
+    const suma = items.filter((it) => !it.nota).reduce((acc, it) => {
+      const bruto = Number(it.cantidad || 0) * Number(it.precioUnit || 0);
+      const d = Math.min(Math.max(Number(it.descPct) || 0, 0), 100);
+      return acc + bruto * (1 - d / 100);
+    }, 0);
     const neto = suma / (1 + RATE);
     return { neto, iva: suma - neto, total: suma };
   }, [items]);
@@ -95,8 +103,10 @@ export default function Emitir() {
   // Productos cobrables (con precio) y todo lo que va al detalle (incluye notas sin valor)
   const reales = items.filter((it) => !it.nota && it.desc.trim() && Number(it.precioUnit) > 0 && Number(it.cantidad) > 0);
   const itemsAEmitir = items.filter((it) => (it.nota ? it.desc.trim() : it.desc.trim() && Number(it.precioUnit) > 0 && Number(it.cantidad) > 0));
-  const cuitOk = esCF || /^\d{11}$/.test(String(docNro).replace(/\D/g, ""));
-  const puedeEmitir = reales.length > 0 && cuitOk && (esCF || nombre.trim());
+  const cuitOk = /^\d{11}$/.test(cuitDigits);
+  // Si eligió un tipo con datos y empezó a cargarlos pero quedaron incompletos, exigir CUIT(11)+nombre.
+  const datosIncompletos = !esCFsel && !sinDatos && !(cuitOk && nombre.trim());
+  const puedeEmitir = reales.length > 0 && !datosIncompletos;
 
   async function guardarClienteActual() {
     await window.api.guardarCliente({ cuit: String(docNro).replace(/\D/g, ""), nombre, condicion: receptorCond, domicilio });
@@ -113,10 +123,11 @@ export default function Emitir() {
     setStep("emitiendo");
     try {
       const res = await window.api.emitir({
-        receptorCond, docNro, nombre, domicilio, condVenta,
+        receptorCond: condEfectiva,
+        docNro: esCF ? "" : docNro, nombre: esCF ? "" : nombre, domicilio: esCF ? "" : domicilio, condVenta,
         items: itemsAEmitir.map((it) => (it.nota
           ? { desc: it.desc, nota: true }
-          : { desc: it.desc, cantidad: Number(it.cantidad), precioUnit: Number(it.precioUnit), unidad: it.unidad })),
+          : { desc: it.desc, cantidad: Number(it.cantidad), precioUnit: Number(it.precioUnit), unidad: it.unidad, descPct: Number(it.descPct) || 0 })),
         ptoVta: PTO_VTA,
       });
       if (res.ok) { setResult(res); setStep("ok"); window.api.imprimirFactura(res.id, imprimirOriginal ? ["ORIGINAL", "DUPLICADO"] : ["DUPLICADO"]); }
@@ -173,7 +184,7 @@ export default function Emitir() {
               {CLIENTES.map((c) => <option key={c}>{c}</option>)}
             </select>
           </label>
-          {!esCF && (
+          {!esCFsel && (
             <>
               {!cuitOk && docNro && <small className="bad">El CUIT debe tener 11 dígitos.</small>}
               <label className="fld"><span>Razón social / Nombre</span>
@@ -193,11 +204,11 @@ export default function Emitir() {
         <section className="panel">
           <h3>Ítems</h3>
           <table className="items">
-            <thead><tr><th>Descripción</th><th>Cant.</th><th>U. Medida</th><th>Precio (con IVA)</th><th></th></tr></thead>
+            <thead><tr><th>Descripción</th><th>Cant.</th><th>U. Medida</th><th>Precio (con IVA)</th><th>Desc. %</th><th></th></tr></thead>
             <tbody ref={tbodyRef}>
               {items.map((it, i) => (it.nota ? (
                 <tr key={i} className="nota-row">
-                  <td colSpan="4"><input value={it.desc} onChange={(e) => setItem(i, { desc: e.target.value })} onKeyDown={(e) => onTabUltima(e, i)} placeholder="Ej: N° de Afiliado 12345 — línea sin valor" /></td>
+                  <td colSpan="5"><input value={it.desc} onChange={(e) => setItem(i, { desc: e.target.value })} onKeyDown={(e) => onTabUltima(e, i)} placeholder="Ej: N° de Afiliado 12345 — línea sin valor" /></td>
                   <td><button className="del" onClick={() => delItem(i)} title="Quitar">×</button></td>
                 </tr>
               ) : (
@@ -205,7 +216,8 @@ export default function Emitir() {
                   <td><input value={it.desc} onChange={(e) => setItem(i, { desc: e.target.value })} placeholder="Ej: Anteojo con graduación" /></td>
                   <td><input className="num" type="number" min="0" value={it.cantidad} onChange={(e) => setItem(i, { cantidad: e.target.value })} /></td>
                   <td><select value={it.unidad} onChange={(e) => setItem(i, { unidad: e.target.value })}>{U_MEDIDA.map((u) => <option key={u}>{u}</option>)}</select></td>
-                  <td><input className="num" type="number" min="0" step="0.01" value={it.precioUnit} onChange={(e) => setItem(i, { precioUnit: e.target.value })} onKeyDown={(e) => onTabUltima(e, i)} placeholder="0,00" /></td>
+                  <td><input className="num" type="number" min="0" step="0.01" value={it.precioUnit} onChange={(e) => setItem(i, { precioUnit: e.target.value })} placeholder="0,00" /></td>
+                  <td><input className="num" type="number" min="0" max="100" step="0.01" value={it.descPct} onChange={(e) => setItem(i, { descPct: e.target.value })} onKeyDown={(e) => onTabUltima(e, i)} placeholder="0" /></td>
                   <td><button className="del" onClick={() => delItem(i)} title="Quitar">×</button></td>
                 </tr>
               )))}
@@ -226,6 +238,16 @@ export default function Emitir() {
             <input type="checkbox" checked={imprimirOriginal} onChange={(e) => setImprimirOriginal(e.target.checked)} />
             <span>Imprimir <b>original</b> (para el cliente). El <b>duplicado</b> se imprime siempre.</span>
           </label>
+          {!esCFsel && sinDatos && (
+            <small className="good" style={{ display: "block", marginBottom: 8 }}>
+              Sin datos del cliente → se emitirá <b>Factura B</b> a <b>Consumidor Final</b>.
+            </small>
+          )}
+          {datosIncompletos && (
+            <small className="bad" style={{ display: "block", marginBottom: 8 }}>
+              Completá CUIT (11 dígitos) y nombre, o dejalos vacíos para emitir a Consumidor Final.
+            </small>
+          )}
           <button className="emit-btn" disabled={!puedeEmitir} onClick={() => setStep("confirm")}>
             Emitir Factura {tipo} — {money(totales.total)}
           </button>
@@ -236,7 +258,7 @@ export default function Emitir() {
         <div className="modal-bg">
           <div className="modal">
             <h2>Confirmar emisión</h2>
-            <p>Vas a emitir una <b>Factura {tipo}</b> a <b>{esA ? nombre : "Consumidor Final"}</b> por <b>{money(totales.total)}</b>.</p>
+            <p>Vas a emitir una <b>Factura {tipo}</b> a <b>{esCF ? "Consumidor Final" : nombre}</b> por <b>{money(totales.total)}</b>.</p>
             <p className="warn">Este comprobante es <b>real y fiscal</b>: queda registrado en ARCA.</p>
             <div className="modal-btns">
               <button className="ghost" onClick={() => setStep("form")}>Cancelar</button>

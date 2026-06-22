@@ -46,7 +46,7 @@ export function renderFacturaHTML({ emisor, f, qrDataUrl, logoDataUrl, copias = 
         <td class="c">${esc(it.codigo ?? "-")}</td><td class="prod">${esc(it.desc)}</td>
         <td class="r">${num(it.cantidad)}</td><td class="c">${esc(it.unidad ?? "Unidades")}</td>
         <td class="r">${num(it.precioUnit)}</td><td class="r">${num(it.bonifPct ?? 0)}</td>
-        <td class="r">0,00</td><td class="r">${num(it.subtotal)}</td>
+        <td class="r">${num(it.bonifImp ?? 0)}</td><td class="r">${num(it.subtotal)}</td>
       </tr>`).join("");
 
   // Totales: A discrimina IVA; B muestra Régimen Ley 27.743 con IVA contenido

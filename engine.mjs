@@ -284,14 +284,19 @@ export async function emitir({ receptorCond, docNro, nombre, domicilio, condVent
     if (it.nota) { display.push({ codigo: "-", desc: (it.desc || "").toUpperCase(), nota: true }); continue; } // línea sin valor (ej. N° afiliado)
     const cant = Number(it.cantidad);
     const precio = Number(it.precioUnit); // siempre se ingresa el precio FINAL (con IVA)
-    const lineNeto = round2((cant * precio) / (1 + RATE)); // la app calcula el neto sola
+    const descPct = Math.min(Math.max(Number(it.descPct) || 0, 0), 100); // bonificación 0-100%
+    const brutoFinal = cant * precio;
+    const bonifFinal = round2((brutoFinal * descPct) / 100); // descuento en $ (con IVA)
+    const netoFinalLinea = brutoFinal - bonifFinal; // final con IVA, ya con descuento
+    const lineNeto = round2(netoFinalLinea / (1 + RATE)); // la app calcula el neto sola
     const unitNeto = round2(precio / (1 + RATE));
     lineItems.push({ neto: lineNeto, iva: IvaTipo.IVA_21 });
     display.push({
       codigo: it.codigo || "-", desc: (it.desc || "").toUpperCase(), cantidad: cant,
-      unidad: it.unidad || "Unidades", bonifPct: 0,
+      unidad: it.unidad || "Unidades", bonifPct: descPct,
+      bonifImp: tipo === "A" ? round2((cant * unitNeto * descPct) / 100) : bonifFinal,
       precioUnit: tipo === "A" ? unitNeto : precio, // A muestra neto (discrimina IVA); B muestra final
-      subtotal: tipo === "A" ? lineNeto : round2(cant * precio),
+      subtotal: tipo === "A" ? lineNeto : round2(netoFinalLinea),
     });
   }
 
