@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 
 const CLASE = { FACTURA: "Factura", NC: "Nota de Crédito", ND: "Nota de Débito" };
 const fmt = (s) => `${s.slice(6, 8)}/${s.slice(4, 6)}/${s.slice(0, 4)}`;
@@ -14,6 +14,7 @@ export default function Facturas({ toast }) {
   const [compartir, setCompartir] = useState(null); // { f }
   const [cmedio, setCmedio] = useState("whatsapp");
   const [cdest, setCdest] = useState("");
+  const emitiendoRef = useRef(false); // guard síncrono anti doble-emisión (NC/ND)
 
   async function cargar(query = "") {
     setLoading(true);
@@ -23,11 +24,17 @@ export default function Facturas({ toast }) {
   useEffect(() => { cargar(); }, []);
 
   async function imprimir(id) {
-    try { await window.api.imprimirFactura(id); toast?.("PDF abierto en el visor."); }
-    catch (e) { toast?.(e?.message || String(e), "error"); }
+    try {
+      const r = await window.api.imprimirFactura(id);
+      if (!r) return; // canceló el guardado
+      if (r.impreso) toast?.("Enviado a la impresora.");
+      else toast?.("No se pudo imprimir automáticamente. Se abrió el PDF para imprimir a mano.", "error");
+    } catch (e) { toast?.(e?.message || String(e), "error"); }
   }
 
   async function confirmarNota() {
+    if (emitiendoRef.current) return; // ya se está emitiendo: ignorar clics repetidos
+    emitiendoRef.current = true;
     setWorking(true);
     try {
       const res = await window.api.emitirNota({ clase: nota.clase, facturaId: nota.f.id });
@@ -40,7 +47,7 @@ export default function Facturas({ toast }) {
         toast?.("Rechazada: " + (res.observaciones || []).map((o) => o.msg).join(" · "), "error");
       }
     } catch (e) { toast?.(e?.message || String(e), "error"); }
-    finally { setWorking(false); }
+    finally { setWorking(false); emitiendoRef.current = false; }
   }
 
   async function confirmarCompartir() {

@@ -9,17 +9,52 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
+// cloud-config.json trae SOLO datos públicos: url + anon key. La contraseña NO va acá.
 let CONFIG = null;
 try { CONFIG = JSON.parse(fs.readFileSync(path.join(HERE, "cloud-config.json"), "utf-8")); } catch { CONFIG = null; }
+
+// Credenciales (email/contraseña) POR COMPUTADORA: se guardan en la carpeta de datos del
+// usuario (cloud-cred.json), NO viajan en el instalador. El engine define la ruta.
+let CRED_PATH = null;
+export function setCredPath(p) { CRED_PATH = p; }
+function loadCred() {
+  try { const c = JSON.parse(fs.readFileSync(CRED_PATH, "utf-8")); if (c && c.email && c.password) return c; } catch { /* no hay archivo */ }
+  // Compatibilidad: si un cloud-config.json viejo todavía trae email/password, se usa (para no romper PCs no migradas).
+  if (CONFIG && CONFIG.email && CONFIG.password) return { email: CONFIG.email, password: CONFIG.password };
+  return null;
+}
+export function estadoCredenciales() {
+  const c = loadCred();
+  return { configurada: !!c, email: c?.email || "" };
+}
+export function guardarCredenciales({ email, password }) {
+  if (!CRED_PATH) throw new Error("Ruta de credenciales no definida");
+  fs.writeFileSync(CRED_PATH, JSON.stringify({ email: String(email || "").trim(), password: String(password || "") }, null, 2));
+  token = null; // forzar re-login con las nuevas credenciales
+}
+export async function probarCredenciales({ email, password }) {
+  if (!CONFIG) return { ok: false, error: "Falta la configuración de la nube (url/anon)" };
+  try {
+    const r = await fetch(`${CONFIG.url}/auth/v1/token?grant_type=password`, {
+      method: "POST",
+      headers: { apikey: CONFIG.anon, "Content-Type": "application/json" },
+      body: JSON.stringify({ email: String(email || "").trim(), password }),
+    });
+    if (!r.ok) return { ok: false, error: r.status === 400 ? "Usuario o contraseña incorrectos" : "Error de conexión (" + r.status + ")" };
+    return { ok: true };
+  } catch (e) { return { ok: false, error: e?.message || String(e) }; }
+}
 
 let token = null;
 
 async function signIn() {
   if (!CONFIG) throw new Error("Nube no configurada");
+  const cred = loadCred();
+  if (!cred) throw new Error("Nube sin credenciales en esta PC");
   const r = await fetch(`${CONFIG.url}/auth/v1/token?grant_type=password`, {
     method: "POST",
     headers: { apikey: CONFIG.anon, "Content-Type": "application/json" },
-    body: JSON.stringify({ email: CONFIG.email, password: CONFIG.password }),
+    body: JSON.stringify({ email: cred.email, password: cred.password }),
   });
   if (!r.ok) throw new Error("Login a la nube falló: " + r.status);
   token = (await r.json()).access_token;
@@ -41,7 +76,7 @@ export async function nubeDisponible() {
 }
 
 export async function fetchClientes() {
-  const r = await req("facturador_clientes?select=cuit,nombre,condicion,domicilio");
+  const r = await req("facturador_clientes?select=cuit,nombre,condicion,domicilio,actualizado_en");
   return r.ok ? r.json() : [];
 }
 export async function fetchFacturas() {
@@ -113,4 +148,82 @@ export async function pushFactura(rec, pc) {
       qr: rec.qr || null, data: rec, pc: pc || null,
     }),
   });
+}
+
+// ---- Presupuestos (documentos no fiscales) ----
+export async function fetchPresupuestos() {
+  const r = await req("facturador_presupuestos?select=*&order=id.asc");
+  return r.ok ? r.json() : [];
+}
+/** Sube/actualiza un presupuesto (upsert por uid: refleja también cambios de estado). */
+export async function pushPresupuesto(rec, pc) {
+  await req("facturador_presupuestos", {
+    method: "POST",
+    headers: { Prefer: "resolution=merge-duplicates" },
+    body: JSON.stringify({
+      uid: rec.uid, numero: rec.numero, fecha: rec.fecha,
+      receptor_nombre: rec.receptor?.nombre || "Consumidor Final",
+      total: rec.importes?.total ?? 0, neto: rec.importes?.neto ?? null, iva: rec.importes?.iva ?? null,
+      estado: rec.estado || "vigente", factura_id: rec.facturaId || null,
+      data: rec, pc: pc || null, actualizado_en: new Date().toISOString(),
+    }),
+  });
+}
+export async function deletePresupuesto(uid) {
+  if (uid) await req(`facturador_presupuestos?uid=eq.${encodeURIComponent(uid)}`, { method: "DELETE" });
+}
+
+// ---- Storage (archivos): bucket "sancor" ----
+// Guarda preliquidaciones, facturas y fotos, compartidas entre PCs.
+// Mismo login que el resto (usuario authenticated); credenciales en cloud-config.json.
+const BUCKET = "sancor";
+function encPath(objectPath) {
+  return objectPath.split("/").map(encodeURIComponent).join("/");
+}
+async function storageFetch(pathAndQuery, opts = {}, reintentar = true) {
+  if (!CONFIG) throw new Error("Nube no configurada");
+  if (!token) await signIn();
+  const r = await fetch(`${CONFIG.url}/storage/v1/${pathAndQuery}`, {
+    ...opts,
+    headers: { apikey: CONFIG.anon, Authorization: `Bearer ${token}`, ...(opts.headers || {}) },
+  });
+  if (r.status === 401 && reintentar) { token = null; await signIn(); return storageFetch(pathAndQuery, opts, false); }
+  return r;
+}
+
+/** Sube (o reemplaza) un archivo. objectPath ej: "2026/06/GRAV/archivo.pdf". */
+export async function subirArchivo(objectPath, buffer, contentType) {
+  if (!CONFIG) return { ok: false, error: "Nube no configurada" };
+  try {
+    const r = await storageFetch(`object/${BUCKET}/${encPath(objectPath)}`, {
+      method: "POST",
+      headers: { "Content-Type": contentType || "application/octet-stream", "x-upsert": "true" },
+      body: buffer,
+    });
+    if (!r.ok) return { ok: false, error: `${r.status} ${await r.text().catch(() => "")}`.trim() };
+    return { ok: true, path: objectPath };
+  } catch (e) { return { ok: false, error: e?.message || String(e) }; }
+}
+
+/** Lista los archivos bajo un prefijo (un nivel). Devuelve [{name,...}]. */
+export async function listarArchivos(prefix = "") {
+  if (!CONFIG) return [];
+  try {
+    const r = await storageFetch(`object/list/${BUCKET}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prefix, limit: 1000, sortBy: { column: "name", order: "asc" } }),
+    });
+    if (!r.ok) return [];
+    return (await r.json()).filter((o) => o && o.name && o.id !== null); // solo archivos (no subcarpetas)
+  } catch { return []; }
+}
+
+/** Descarga un archivo como Buffer (o null si no está). */
+export async function bajarArchivo(objectPath) {
+  try {
+    const r = await storageFetch(`object/${BUCKET}/${encPath(objectPath)}`, { method: "GET" });
+    if (!r.ok) return null;
+    return Buffer.from(await r.arrayBuffer());
+  } catch { return null; }
 }

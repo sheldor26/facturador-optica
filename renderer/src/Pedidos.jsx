@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
+import { mensajeHumano } from "./errores.js";
 
 const money = (n) => "$ " + Number(n || 0).toLocaleString("es-AR", { minimumFractionDigits: 2 });
 
@@ -7,6 +8,7 @@ export default function Pedidos({ toast }) {
   const [loading, setLoading] = useState(true);
   const [conf, setConf] = useState(null); // pedido a facturar
   const [working, setWorking] = useState(false);
+  const facturandoRef = useRef(false); // guard síncrono anti doble-emisión
 
   async function cargar() {
     setLoading(true);
@@ -16,6 +18,8 @@ export default function Pedidos({ toast }) {
   useEffect(() => { cargar(); }, []);
 
   async function facturar() {
+    if (facturandoRef.current) return; // ya se está facturando: ignorar clics repetidos
+    facturandoRef.current = true;
     setWorking(true);
     try {
       const res = await window.api.facturarPedido(conf.id);
@@ -25,10 +29,10 @@ export default function Pedidos({ toast }) {
         setConf(null);
         await cargar();
       } else {
-        toast?.("Rechazada: " + (res.observaciones || []).map((o) => o.msg).join(" · "), "error");
+        toast?.("ARCA no aceptó: " + (res.observaciones || []).map((o) => o.msg).join(" · "), "error");
       }
-    } catch (e) { toast?.(e?.message || String(e), "error"); }
-    finally { setWorking(false); }
+    } catch (e) { toast?.(mensajeHumano(e), "error"); }
+    finally { setWorking(false); facturandoRef.current = false; }
   }
 
   return (

@@ -8,6 +8,8 @@ export default function Clientes({ toast }) {
   const [q, setQ] = useState("");
   const [form, setForm] = useState(vacio());
   const [buscando, setBuscando] = useState(false);
+  const [borrar, setBorrar] = useState(null); // cliente a eliminar (confirmación)
+  const [working, setWorking] = useState(false);
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
   async function cargar(query = "") { setItems(await window.api.listarClientes(query)); }
@@ -34,9 +36,15 @@ export default function Clientes({ toast }) {
     setForm(vacio()); toast?.("Cliente guardado.");
     await cargar(q);
   }
-  async function eliminar(cuit) {
-    await window.api.eliminarCliente(cuit);
-    await cargar(q);
+  async function confirmarBorrar() {
+    setWorking(true);
+    try {
+      await window.api.eliminarCliente(borrar.cuit);
+      setBorrar(null);
+      toast?.("Cliente eliminado.");
+      await cargar(q);
+    } catch (e) { toast?.(e?.message || String(e), "error"); }
+    finally { setWorking(false); }
   }
 
   return (
@@ -77,12 +85,24 @@ export default function Clientes({ toast }) {
                 <td className="cae">{c.cuit}</td>
                 <td>{c.condicion}</td>
                 <td>{c.domicilio || "—"}</td>
-                <td className="r"><button className="del mini" onClick={() => eliminar(c.cuit)} title="Eliminar">×</button></td>
+                <td className="r"><button className="del mini" onClick={() => setBorrar(c)} title="Eliminar">×</button></td>
               </tr>
             ))
           )}
         </tbody>
       </table>
+
+      {borrar && (
+        <div className="modal-bg"><div className="modal">
+          <h2>Eliminar cliente</h2>
+          <p>¿Eliminar a <b>{borrar.nombre}</b> (CUIT {borrar.cuit})?</p>
+          <p className="warn">Esta acción no se puede deshacer.</p>
+          <div className="modal-btns">
+            <button className="ghost" onClick={() => setBorrar(null)} disabled={working}>Cancelar</button>
+            <button onClick={confirmarBorrar} disabled={working}>{working ? "Eliminando…" : "Eliminar"}</button>
+          </div>
+        </div></div>
+      )}
     </>
   );
 }

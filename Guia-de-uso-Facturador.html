@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Guía de uso · Facturador Óptica</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Public+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#16233d;          /* navy tinta principal */
+    --ink-soft:#4a5670;
+    --muted:#7b8398;
+    --brand:#1b2a4a;
+    --accent:#3b6fd6;       /* azul de la app */
+    --accent-soft:#eaf1fc;
+    --gold:#b08b3f;         /* detalle premium, muy puntual */
+    --paper:#f6f7fb;
+    --card:#ffffff;
+    --line:#e6e9f1;
+    --line-strong:#d6dbe6;
+    --ok:#12915a; --ok-bg:#e9f7ef;
+    --warn:#9a6a12; --warn-bg:#fbf3e0;
+    --radius:18px;
+    --shadow:0 1px 2px rgba(20,30,60,.04), 0 10px 30px rgba(20,30,60,.06);
+  }
+  *{box-sizing:border-box;}
+  html{-webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;}
+  body{
+    margin:0; background:
+      radial-gradient(1200px 600px at 88% -8%, #eef2fb 0%, rgba(238,242,251,0) 60%),
+      var(--paper);
+    color:var(--ink); font-family:"Public Sans", ui-sans-serif, system-ui, sans-serif;
+    font-size:16px; line-height:1.6;
+  }
+  .wrap{max-width:920px; margin:0 auto; padding:0 28px 90px;}
+
+  /* ---------- Portada ---------- */
+  .cover{
+    position:relative; padding:64px 0 40px; margin-bottom:14px;
+    border-bottom:1px solid var(--line);
+  }
+  .kicker{
+    font-size:.74rem; letter-spacing:.32em; text-transform:uppercase;
+    color:var(--accent); font-weight:700; margin:0 0 18px;
+  }
+  .cover h1{
+    font-family:"Fraunces", Georgia, serif; font-weight:600;
+    font-size:clamp(2.6rem, 6vw, 4.1rem); line-height:1.02; letter-spacing:-.02em;
+    margin:0 0 14px; color:var(--brand);
+  }
+  .cover h1 em{font-style:italic; color:var(--accent);}
+  .cover .sub{font-size:1.12rem; color:var(--ink-soft); max-width:34em; margin:0;}
+  .cover .meta{
+    margin-top:30px; display:flex; gap:26px; flex-wrap:wrap;
+    font-size:.82rem; color:var(--muted); letter-spacing:.02em;
+  }
+  .cover .meta b{color:var(--ink); font-weight:600;}
+  .seal{
+    position:absolute; top:60px; right:0; width:92px; height:92px; border-radius:50%;
+    border:1px solid var(--line-strong); display:grid; place-items:center; color:var(--brand);
+    background:var(--card); box-shadow:var(--shadow);
+  }
+  .seal svg{width:42px;height:42px;}
+
+  /* ---------- Bloques ---------- */
+  h2.sec-h{
+    font-family:"Fraunces", Georgia, serif; font-weight:600; font-size:1.05rem;
+    letter-spacing:.02em; color:var(--brand); margin:0 0 16px;
+    text-transform:uppercase; letter-spacing:.14em; font-size:.82rem;
+  }
+  .lead-grid{display:grid; grid-template-columns:1fr 1fr; gap:16px; margin:26px 0 8px;}
+  .panel{
+    background:var(--card); border:1px solid var(--line); border-radius:var(--radius);
+    padding:20px 22px; box-shadow:var(--shadow);
+  }
+  .panel h3{margin:0 0 6px; font-size:.98rem; color:var(--brand);}
+  .panel p{margin:0; font-size:.9rem; color:var(--ink-soft);}
+  .legend{display:flex; flex-direction:column; gap:12px;}
+  .legend .row{display:flex; gap:12px; align-items:flex-start; font-size:.9rem;}
+  .dot{width:11px;height:11px;border-radius:50%;margin-top:6px;flex:0 0 auto;}
+  .dot.green{background:var(--ok);} .dot.red{background:#d6443a;} .dot.cloud{background:var(--accent);}
+
+  .concepts{
+    margin:14px 0 6px; border-radius:var(--radius); border:1px solid var(--line);
+    background:linear-gradient(180deg,#fbfcfe,#f4f6fb); padding:6px 22px; box-shadow:var(--shadow);
+  }
+  .concepts dl{margin:0; display:grid; grid-template-columns:150px 1fr;}
+  .concepts div{display:contents;}
+  .concepts dt{
+    grid-column:1; padding:14px 0; font-weight:700; color:var(--brand); font-size:.92rem;
+    border-top:1px solid var(--line);
+  }
+  .concepts dd{
+    grid-column:2; padding:14px 0 14px 18px; margin:0; color:var(--ink-soft); font-size:.92rem;
+    border-top:1px solid var(--line);
+  }
+  .concepts div:first-child dt, .concepts div:first-child dd{border-top:none;}
+  .pill{display:inline-block; font-size:.74rem; font-weight:700; padding:2px 9px; border-radius:999px; letter-spacing:.02em; vertical-align:middle;}
+  .pill.a{background:#eef0fb;color:#3a49a8;} .pill.b{background:var(--accent-soft);color:var(--accent);}
+
+  /* ---------- Índice ---------- */
+  .toc{margin:34px 0 10px;}
+  .toc ol{list-style:none; counter-reset:t; margin:0; padding:0;
+    columns:2; column-gap:34px;}
+  .toc li{counter-increment:t; break-inside:avoid; display:flex; align-items:center; gap:12px;
+    padding:9px 0; border-bottom:1px solid var(--line); font-size:.95rem;}
+  .toc li::before{content:counter(t,decimal-leading-zero); font-family:"Fraunces",serif;
+    font-size:.86rem; color:var(--accent); font-weight:600; min-width:26px;}
+  .toc a{color:var(--ink); text-decoration:none;}
+  .toc a:hover{color:var(--accent);}
+
+  /* ---------- Secciones ---------- */
+  .section{margin-top:46px; scroll-margin-top:20px;}
+  .section-head{display:flex; align-items:center; gap:16px; margin-bottom:6px;}
+  .num{
+    font-family:"Fraunces", serif; font-weight:600; font-size:1.02rem; color:#fff;
+    width:40px; height:40px; border-radius:12px; display:grid; place-items:center; flex:0 0 auto;
+    background:linear-gradient(160deg, var(--accent), #2f56ab); box-shadow:0 6px 16px rgba(59,111,214,.28);
+  }
+  .icn{width:26px;height:26px;color:var(--brand);flex:0 0 auto;}
+  .section h2{font-family:"Fraunces", Georgia, serif; font-weight:600; font-size:1.7rem;
+    letter-spacing:-.01em; color:var(--brand); margin:0;}
+  .whatfor{margin:2px 0 18px 56px; color:var(--ink-soft); font-size:1.02rem;}
+  .body{margin-left:56px;}
+  .steps{list-style:none; counter-reset:s; margin:0; padding:0;}
+  .steps>li{counter-increment:s; position:relative; padding:0 0 16px 40px; }
+  .steps>li::before{content:counter(s); position:absolute; left:0; top:-2px;
+    width:26px;height:26px;border-radius:50%; background:var(--accent-soft); color:var(--accent);
+    font-weight:700; font-size:.82rem; display:grid; place-items:center;
+    font-family:"Public Sans",sans-serif;}
+  .steps>li:not(:last-child)::after{content:""; position:absolute; left:13px; top:26px; bottom:2px;
+    width:1px; background:var(--line-strong);}
+  .steps b{color:var(--ink);}
+  .sub-list{margin:6px 0 0; padding-left:18px; color:var(--ink-soft); font-size:.92rem;}
+  .sub-list li{margin:2px 0;}
+
+  .tip{
+    margin:14px 0 0; padding:14px 18px 14px 16px; border-radius:12px;
+    background:var(--warn-bg); border-left:3px solid var(--gold); font-size:.9rem; color:#5f4a12;
+  }
+  .tip.info{background:var(--accent-soft); border-left-color:var(--accent); color:#274a8f;}
+  .tip.ok{background:var(--ok-bg); border-left-color:var(--ok); color:#0f6c46;}
+  .tip .t{font-weight:700; letter-spacing:.06em; text-transform:uppercase; font-size:.68rem; display:block; margin-bottom:3px;}
+  .tag{display:inline-block; background:#eef1f7; color:var(--ink-soft); border-radius:6px; padding:1px 7px; font-size:.82em; font-weight:600;}
+
+  .rule{height:1px;background:var(--line);margin:44px 0 0;border:0;}
+  footer{margin-top:40px; padding-top:22px; border-top:1px solid var(--line);
+    color:var(--muted); font-size:.82rem; display:flex; justify-content:space-between; flex-wrap:wrap; gap:10px;}
+
+  a.top{color:var(--accent);text-decoration:none;font-size:.8rem;}
+
+  @media (max-width:680px){
+    .lead-grid{grid-template-columns:1fr;} .toc ol{columns:1;}
+    .concepts dl{grid-template-columns:1fr;} .concepts dt{padding-bottom:0;border-top:1px solid var(--line);}
+    .concepts dd{padding-left:0; border-top:none;}
+    .whatfor,.body{margin-left:0;}
+  }
+
+  /* ---------- Impresión ---------- */
+  @media print{
+    body{background:#fff;} .wrap{max-width:none;padding:0 6mm;}
+    .seal{box-shadow:none;} .panel,.concepts{box-shadow:none;}
+    .section{break-inside:avoid;} .cover{padding-top:8mm;}
+    a.top{display:none;} .num{box-shadow:none;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+    *{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- PORTADA -->
+  <header class="cover" id="inicio-doc">
+    <div class="seal" title="Facturador Óptica">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M12 11v6M9 14h6"/></svg>
+    </div>
+    <p class="kicker">Guía de uso</p>
+    <h1>Facturador <em>Óptica</em></h1>
+    <p class="sub">Todo lo que necesitás para emitir facturas, gestionar clientes y presentar las prestaciones de Sancor — explicado paso a paso.</p>
+    <div class="meta">
+      <span><b>Para</b> · uso diario del mostrador</span>
+      <span><b>Nivel</b> · sin conocimientos técnicos</span>
+      <span><b>Incluye</b> · módulo Sancor</span>
+    </div>
+  </header>
+
+  <!-- ANTES DE EMPEZAR -->
+  <section class="lead">
+    <div class="lead-grid">
+      <div class="panel">
+        <h3>Indicadores de estado</h3>
+        <p style="margin-bottom:12px">Abajo a la izquierda, la app muestra si está todo conectado. Verde = bien; rojo = sin conexión.</p>
+        <div class="legend">
+          <div class="row"><span class="dot green"></span><span><b>ARCA en línea.</b> Necesario para emitir cualquier comprobante fiscal.</span></div>
+          <div class="row"><span class="dot cloud"></span><span><b>Nube conectada.</b> Sincroniza clientes, facturas y archivos entre computadoras.</span></div>
+          <div class="row"><span class="dot red"></span><span><b>Sin conexión.</b> Esperá o revisá internet antes de emitir.</span></div>
+        </div>
+      </div>
+      <div class="panel">
+        <h3>Modo claro / oscuro</h3>
+        <p>Abajo a la izquierda hay un botón para cambiar entre <b>modo claro</b> y <b>oscuro</b>, según prefieras o según la luz del local.</p>
+        <h3 style="margin-top:16px">La primera vez</h3>
+        <p>Si la app pide configuración inicial, se cargan una sola vez el certificado, la clave y los datos del emisor. Después ya queda lista.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- CONCEPTOS -->
+  <section style="margin-top:34px">
+    <h2 class="sec-h">Conceptos que conviene tener claros</h2>
+    <div class="concepts">
+      <dl>
+        <div><dt><span class="pill a">Factura A</span></dt><dd>Se emite a clientes <b>IVA Responsable Inscripto</b>. Muestra el IVA discriminado (neto + IVA).</dd></div>
+        <div><dt><span class="pill b">Factura B</span></dt><dd>Para <b>Consumidor Final, Monotributo o Exento</b>. El precio ya va con el IVA incluido.</dd></div>
+        <div><dt>CAE</dt><dd>Es el código que <b>ARCA</b> le pone a cada comprobante. Se genera solo al emitir y confirma que la factura es válida.</dd></div>
+        <div><dt>Buscar en ARCA</dt><dd>Con el CUIT o DNI, trae automáticamente <b>nombre, condición de IVA y domicilio</b> del cliente.</dd></div>
+        <div><dt>NC / ND</dt><dd><b>Nota de Crédito</b> (devuelve/anula un importe) y <b>Nota de Débito</b> (suma un importe) sobre una factura ya emitida.</dd></div>
+      </dl>
+    </div>
+  </section>
+
+  <!-- ÍNDICE -->
+  <nav class="toc">
+    <h2 class="sec-h">Las 10 secciones de la app</h2>
+    <ol>
+      <li><a href="#s1">Inicio</a></li>
+      <li><a href="#s2">Factura rápida</a></li>
+      <li><a href="#s3">Emitir factura</a></li>
+      <li><a href="#s4">Presupuestos</a></li>
+      <li><a href="#s5">Pedidos web</a></li>
+      <li><a href="#s6">Facturas emitidas</a></li>
+      <li><a href="#s7">Clientes</a></li>
+      <li><a href="#s8">Sancor</a></li>
+      <li><a href="#s9">Reportes</a></li>
+      <li><a href="#s10">Opciones</a></li>
+    </ol>
+  </nav>
+
+  <!-- 1 INICIO -->
+  <section class="section" id="s1">
+    <div class="section-head">
+      <span class="num">1</span>
+      <svg class="icn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/></svg>
+      <h2>Inicio</h2>
+    </div>
+    <p class="whatfor">El tablero de entrada: un vistazo rápido a cómo viene el día y si todo está en línea.</p>
+    <div class="body">
+      <ul class="steps">
+        <li>Mirá el <b>dinero facturado hoy y este mes</b>, y los números de la próxima Factura A y B.</li>
+        <li>Revisá los <b>presupuestos vigentes</b> que quedan por facturar.</li>
+        <li>Consultá la tabla de <b>últimas facturas emitidas</b>.</li>
+      </ul>
+      <div class="tip info"><span class="t">Tip</span>Antes de emitir, confirmá arriba a la derecha que <b>ARCA</b> esté en línea.</div>
+    </div>
+  </section>
+  <hr class="rule">
+
+  <!-- 2 FACTURA RÁPIDA -->
+  <section class="section" id="s2">
+    <div class="section-head">
+      <span class="num">2</span>
+      <svg class="icn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9z"/></svg>
+      <h2>Factura rápida</h2>
+    </div>
+    <p class="whatfor">Para vender en el mostrador sin cargar datos del cliente. La forma más veloz de facturar.</p>
+    <div class="body">
+      <ul class="steps">
+        <li>Escribí el <b>importe total</b> (ya con IVA).</li>
+        <li>Elegí una <b>descripción</b> predefinida (Lentes, Armazón…) o escribí una propia.</li>
+        <li>Si el cliente lo pide, marcá <b>“Imprimir original”</b>.</li>
+        <li>Tocá <b>“Emitir Factura B”</b> y confirmá.</li>
+      </ul>
+      <div class="tip"><span class="t">Importante</span>Sale siempre como <span class="pill b">Factura B</span> a <b>Consumidor Final</b>. El <b>duplicado</b> se imprime siempre; el original es opcional. Podés apretar <span class="tag">Enter</span> en el importe para ir directo a confirmar.</div>
+    </div>
+  </section>
+  <hr class="rule">
+
+  <!-- 3 EMITIR FACTURA -->
+  <section class="section" id="s3">
+    <div class="section-head">
+      <span class="num">3</span>
+      <svg class="icn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M12 11v6M9 14h6"/></svg>
+      <h2>Emitir factura</h2>
+    </div>
+    <p class="whatfor">La factura completa: con datos del cliente, varios productos y descuentos. Elige sola entre A y B.</p>
+    <div class="body">
+      <ul class="steps">
+        <li><b>Cliente:</b> escribí el CUIT o DNI y tocá <b>“Buscar”</b> para traer sus datos de ARCA.
+          <ul class="sub-list">
+            <li>Si aparecen varias personas con el mismo DNI, elegí la correcta.</li>
+            <li>O elegí un cliente ya guardado de la lista.</li>
+          </ul>
+        </li>
+        <li>Revisá la <b>condición frente al IVA</b> (se completa sola al buscar).</li>
+        <li><b>Cargá los ítems:</b> descripción, cantidad, unidad, precio (con IVA) y descuento %.
+          <ul class="sub-list">
+            <li>Apretá <span class="tag">Tab</span> en el último campo para crear otra fila.</li>
+            <li>Usá <b>“Agregar nota”</b> para una línea sin valor (ej: N° de afiliado).</li>
+          </ul>
+        </li>
+        <li>Verificá el <b>total</b> (neto, IVA e importe final se calculan solos).</li>
+        <li>Tocá <b>“Emitir Factura A/B”</b> y confirmá.</li>
+      </ul>
+      <div class="tip"><span class="t">Cómo decide A o B</span>Sin datos del cliente → <span class="pill b">Factura B</span> a Consumidor Final. Con CUIT (11 dígitos) + nombre de un <b>Responsable Inscripto</b> → <span class="pill a">Factura A</span>. Si empezás a cargar datos, completá CUIT y nombre, o dejalos vacíos.</div>
+      <div class="tip ok"><span class="t">Recordá</span>El precio se ingresa siempre <b>con IVA incluido</b>. Después de emitir podés <b>guardar el cliente</b> para no buscarlo la próxima.</div>
+    </div>
+  </section>
+  <hr class="rule">
+
+  <!-- 4 PRESUPUESTOS -->
+  <section class="section" id="s4">
+    <div class="section-head">
+      <span class="num">4</span>
+      <svg class="icn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2h6a1 1 0 0 1 1 1v18l-4-2-4 2V3a1 1 0 0 1 1-1z"/><path d="M9 7h6M9 11h6"/></svg>
+      <h2>Presupuestos</h2>
+    </div>
+    <p class="whatfor">Documentos no fiscales para pasarle un precio al cliente. Después, si confirma, se convierten en factura.</p>
+    <div class="body">
+      <ul class="steps">
+        <li>Tocá <b>“+ Nuevo presupuesto”</b> y completá cliente, ítems, validez (días) y observaciones.</li>
+        <li>Tocá <b>“Crear presupuesto”</b>: queda con un número propio y estado <b>Vigente</b>.</li>
+        <li>Desde la lista podés <b>Imprimir</b>, <b>Compartir</b> (WhatsApp o Email), <b>Facturar</b> o <b>Eliminar</b>.</li>
+      </ul>
+      <div class="tip info"><span class="t">Tip</span>Al tocar <b>“Facturar”</b>, el presupuesto se convierte en una <b>factura fiscal real</b> y pasa a estado “Facturado”. Buscá por cliente o número si tenés muchos.</div>
+    </div>
+  </section>
+  <hr class="rule">
+
+  <!-- 5 PEDIDOS WEB -->
+  <section class="section" id="s5">
+    <div class="section-head">
+      <span class="num">5</span>
+      <svg class="icn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+      <h2>Pedidos web</h2>
+    </div>
+    <p class="whatfor">Los pedidos de la tienda online que están pagos y esperan factura.</p>
+    <div class="body">
+      <ul class="steps">
+        <li>Mirá la lista de pedidos sin facturar (número, fecha, cliente, pago, total).</li>
+        <li>Tocá <b>“Facturar”</b> en el pedido y confirmá.</li>
+        <li>Se emite la factura y el <b>CAE</b> queda cargado en el pedido (se ve en la web).</li>
+      </ul>
+      <div class="tip"><span class="t">Bueno saber</span>El tipo de factura se decide según el CUIT/DNI del comprador. Una vez facturado, el pedido desaparece de la lista. Usá <b>“Actualizar”</b> para recargar.</div>
+    </div>
+  </section>
+  <hr class="rule">
+
+  <!-- 6 FACTURAS EMITIDAS -->
+  <section class="section" id="s6">
+    <div class="section-head">
+      <span class="num">6</span>
+      <svg class="icn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h8"/></svg>
+      <h2>Facturas emitidas</h2>
+    </div>
+    <p class="whatfor">El historial de todo lo emitido. Para reimprimir, compartir o hacer una nota de ajuste.</p>
+    <div class="body">
+      <ul class="steps">
+        <li><b>Buscá</b> por cliente, número de comprobante o CAE.</li>
+        <li><b>Reimprimí</b> o <b>compartí</b> (WhatsApp / Email) cualquier factura.</li>
+        <li>Emití una <b>Nota de Crédito</b> (anula/devuelve) o <b>Nota de Débito</b> (suma) sobre una factura.</li>
+      </ul>
+      <div class="tip"><span class="t">Importante</span>Las notas son comprobantes <b>fiscales reales</b> y solo se hacen sobre facturas (no sobre otras notas). Cada una queda registrada en ARCA con su CAE.</div>
+    </div>
+  </section>
+  <hr class="rule">
+
+  <!-- 7 CLIENTES -->
+  <section class="section" id="s7">
+    <div class="section-head">
+      <span class="num">7</span>
+      <svg class="icn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/></svg>
+      <h2>Clientes</h2>
+    </div>
+    <p class="whatfor">Tu agenda de clientes habituales, para no buscarlos en ARCA cada vez.</p>
+    <div class="body">
+      <ul class="steps">
+        <li>Ingresá CUIT/DNI y tocá <b>“Buscar en ARCA”</b> (trae los datos), o cargalos a mano.</li>
+        <li>Tocá <b>“Guardar cliente”</b>.</li>
+        <li><b>Buscá</b> por nombre o CUIT; el botón <span class="tag">×</span> elimina un cliente.</li>
+      </ul>
+      <div class="tip info"><span class="t">Tip</span>El CUIT (11 dígitos) y el nombre son obligatorios; el domicilio es opcional. Los clientes guardados aparecen como autocompletado en “Emitir factura” y “Presupuestos”.</div>
+    </div>
+  </section>
+  <hr class="rule">
+
+  <!-- 8 SANCOR -->
+  <section class="section" id="s8">
+    <div class="section-head">
+      <span class="num">8</span>
+      <svg class="icn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21V8l-7-5-7 5v13"/><path d="M9 21v-6h6v6"/><path d="M9 9h.01M15 9h.01"/></svg>
+      <h2>Sancor</h2>
+    </div>
+    <p class="whatfor">El trámite mensual de la obra social, de punta a punta: preliquidaciones, IVA, fotos, carpetas y facturas — casi todo automático.</p>
+    <div class="body">
+      <ul class="steps">
+        <li><b>Período y carpeta.</b> Elegí el <b>mes</b> de las prestaciones (viene puesto el mes anterior) y el <b>año</b>. Confirmá la carpeta base donde se guarda todo.</li>
+        <li><b>Agregá las preliquidaciones.</b> Tocá <b>“+ Agregar preliquidaciones (PDF)”</b> y elegí los PDF que bajaste de Sancor. La app detecta sola si cada una es <span class="pill a">GRAV</span> o <span class="pill b">NO GRAV</span> y muestra el total.</li>
+        <li><b>Procesá y archivá.</b> Tocá <b>“Procesar y archivar”</b>. A las <b>GRAV</b> les estampa el <b>IVA 10,5%</b> y el nuevo <b>TOTAL</b> debajo del total del PDF; las <b>NO GRAV</b> quedan igual. Todo se guarda en <span class="tag">Sancor / año / mes / GRAV · NO GRAV</span> y se sube a la nube.</li>
+        <li><b>Sumá las fotos.</b> <b>Arrastrá</b> las fotos de la orden y la receta a los recuadros <b>NO GRAV</b> y <b>GRAV</b> (o usá “elegir archivos…”). Se comprimen, se guardan y se suben solas.</li>
+        <li><b>Emití las facturas.</b> Tocá <b>“Emitir facturas a Sancor en ARCA”</b>, revisá los montos y confirmá. Se emite una <span class="pill b">Factura B</span> por cada tipo, se guarda el PDF y se sube a la nube. Vas a ver el N° y el CAE de cada una.</li>
+      </ul>
+      <div class="tip ok"><span class="t">Cómo se factura</span>El total de la <b>GRAV</b> ya incluye el 10,5%; la <b>NO GRAV</b> se factura por su total tal cual. Ambas salen como Factura B a <b>Sancor</b> (Punto de Venta 7), con un ítem “PRESTACIONES”.</div>
+      <div class="tip"><span class="t">Cuidado</span>El botón de emitir crea comprobantes <b>reales en ARCA</b>. No lo uses dos veces sobre la misma preliquidación (una vez emitidas quedan marcadas con ✓). Si en otra PC no ves los archivos, usá <b>“↓ Descargar este mes de la nube”</b>.</div>
+    </div>
+  </section>
+  <hr class="rule">
+
+  <!-- 9 REPORTES -->
+  <section class="section" id="s9">
+    <div class="section-head">
+      <span class="num">9</span>
+      <svg class="icn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M6 20v-5M12 20V8M18 20v-9"/></svg>
+      <h2>Reportes</h2>
+    </div>
+    <p class="whatfor">Cuánto se facturó en un período, con desglose y exportación a Excel.</p>
+    <div class="body">
+      <ul class="steps">
+        <li>Elegí las fechas <b>“Desde”</b> y <b>“Hasta”</b> y tocá <b>“Ver”</b>.</li>
+        <li>Mirá los totales (neto, IVA, total, cantidad) y el detalle de cada comprobante.</li>
+        <li>Tocá <b>“Exportar a Excel”</b> para bajar el archivo.</li>
+      </ul>
+      <div class="tip info"><span class="t">Tip</span>Por defecto muestra del 1° hasta hoy. Incluye facturas y notas; los presupuestos aparecen aparte con su estado.</div>
+    </div>
+  </section>
+  <hr class="rule">
+
+  <!-- 10 OPCIONES -->
+  <section class="section" id="s10">
+    <div class="section-head">
+      <span class="num">10</span>
+      <svg class="icn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1l2-1.6-2-3.4-2.3 1a7 7 0 0 0-1.7-1l-.4-2.5h-4l-.4 2.5a7 7 0 0 0-1.7 1l-2.3-1-2 3.4 2 1.6a7 7 0 0 0 0 2l-2 1.6 2 3.4 2.3-1a7 7 0 0 0 1.7 1l.4 2.5h4l.4-2.5a7 7 0 0 0 1.7-1l2.3 1 2-3.4-2-1.6a7 7 0 0 0 .1-1z"/></svg>
+      <h2>Opciones</h2>
+    </div>
+    <p class="whatfor">Dónde se guardan los PDF y cómo se imprime.</p>
+    <div class="body">
+      <ul class="steps">
+        <li><b>Carpeta de facturas:</b> tocá <b>“Cambiar carpeta…”</b> para elegir dónde se guardan los PDF. Podés pedir que <b>pregunte cada vez</b>.</li>
+        <li><b>Impresión:</b> activá <b>“Imprimir automáticamente”</b> y elegí la impresora. Si querés, mostrá el <b>diálogo de impresión</b> para elegir copias.</li>
+      </ul>
+      <div class="tip"><span class="t">Bueno saber</span>Si desactivás la impresión automática, la app <b>abre el PDF</b> para imprimir a mano. Los cambios se guardan al instante.</div>
+    </div>
+  </section>
+
+  <footer>
+    <span>Guía de uso · <b>Facturador Óptica</b></span>
+    <span><a class="top" href="#inicio-doc">↑ Volver arriba</a></span>
+  </footer>
+
+</div>
+</body>
+</html>

@@ -1,4 +1,5 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
+import { mensajeHumano, mensajeRechazo } from "./errores.js";
 
 const PTO_VTA = 7;
 const DESCRIPCIONES = ["Lentes", "Armazón", "Lentes Bluecut", "Lentes de Contacto"];
@@ -12,24 +13,37 @@ export default function Rapida() {
   const [result, setResult] = useState(null);
   const [errMsg, setErrMsg] = useState(null);
   const [imprimirOriginal, setImprimirOriginal] = useState(false);
+  const [ptoVta, setPtoVta] = useState(PTO_VTA);
+  const emitiendoRef = useRef(false); // guard síncrono anti doble-emisión
+
+  useEffect(() => { window.api.getConfig?.().then((c) => setPtoVta(c?.ptoVta || PTO_VTA)).catch(() => {}); }, []);
+  useEffect(() => {
+    if (step !== "confirm") return;
+    const h = (e) => { if (e.key === "Escape") setStep("form"); };
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, [step]);
 
   const total = Number(importe) || 0;
   const puede = total > 0 && desc.trim();
 
-  function reset() { setImporte(""); setDesc("Lentes"); setResult(null); setErrMsg(null); setStep("form"); }
+  function reset() { setImporte(""); setDesc("Lentes"); setResult(null); setErrMsg(null); setStep("form"); emitiendoRef.current = false; }
 
   async function emitir() {
+    if (emitiendoRef.current) return; // ya se está emitiendo: ignorar clics repetidos
+    emitiendoRef.current = true;
     setStep("emitiendo");
     try {
       const res = await window.api.emitir({
         receptorCond: "Consumidor Final",
         condVenta: "Otra",
-        ptoVta: PTO_VTA,
+        ptoVta,
         items: [{ desc: desc.trim(), cantidad: 1, precioUnit: total, unidad: "Unidades" }],
       });
-      if (res.ok) { setResult(res); setStep("ok"); window.api.imprimirFactura(res.id, imprimirOriginal ? ["ORIGINAL", "DUPLICADO"] : ["DUPLICADO"]); }
-      else { setErrMsg((res.observaciones || []).map((o) => `[${o.code}] ${o.msg}`).join(" · ") || "Rechazada por ARCA"); setStep("error"); }
-    } catch (e) { setErrMsg(e?.message || String(e)); setStep("error"); }
+      if (res.ok) { setResult(res); setStep("ok"); window.api.imprimirFactura(res.id, imprimirOriginal ? ["ORIGINAL", "DUPLICADO"] : ["DUPLICADO"]).catch(() => {}); }
+      else { setErrMsg(mensajeRechazo(res.observaciones)); setStep("error"); }
+    } catch (e) { setErrMsg(mensajeHumano(e)); setStep("error"); }
+    finally { emitiendoRef.current = false; }
   }
 
   if (step === "ok") {
@@ -94,7 +108,7 @@ export default function Rapida() {
           <p className="warn">Es un comprobante <b>real y fiscal</b>.</p>
           <div className="modal-btns">
             <button className="ghost" onClick={() => setStep("form")}>Cancelar</button>
-            <button onClick={emitir}>Sí, emitir</button>
+            <button disabled={step === "emitiendo"} onClick={emitir}>Sí, emitir</button>
           </div>
         </div></div>
       )}
@@ -102,7 +116,7 @@ export default function Rapida() {
       {step === "error" && (
         <div className="modal-bg"><div className="modal">
           <h2>No se pudo emitir</h2>
-          <p className="warn">{errMsg}</p>
+          <p className="warn" style={{ whiteSpace: "pre-line" }}>{errMsg}</p>
           <div className="modal-btns"><button onClick={() => setStep("form")}>Volver</button></div>
         </div></div>
       )}

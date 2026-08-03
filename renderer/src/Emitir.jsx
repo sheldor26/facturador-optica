@@ -1,4 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { mensajeHumano, mensajeRechazo } from "./errores.js";
+import CatalogoLentes from "./CatalogoLentes.jsx";
 
 const PTO_VTA = 7;
 const RATE = 0.21;
@@ -6,8 +8,9 @@ const CLIENTES = ["Consumidor Final", "IVA Responsable Inscripto", "Responsable 
 const U_MEDIDA = ["Unidades", "Par"];
 const COND_VENTA = ["Otra", "Contado", "Cuenta Corriente", "Tarjeta", "Transferencia"];
 const money = (n) => "$ " + Number(n || 0).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const itemVacio = () => ({ desc: "", cantidad: 1, precioUnit: "", unidad: "Unidades", descPct: "", nota: false });
-const notaVacia = () => ({ desc: "", cantidad: "", precioUnit: "", unidad: "", nota: true });
+const nuevoId = () => Math.random().toString(36).slice(2); // key estable por fila
+const itemVacio = () => ({ _id: nuevoId(), desc: "", cantidad: 1, precioUnit: "", unidad: "Unidades", descPct: "", nota: false });
+const notaVacia = () => ({ _id: nuevoId(), desc: "", cantidad: "", precioUnit: "", unidad: "", nota: true });
 
 export default function Emitir() {
   const [receptorCond, setReceptorCond] = useState("Consumidor Final");
@@ -18,6 +21,7 @@ export default function Emitir() {
   const [items, setItems] = useState([itemVacio()]);
   const [step, setStep] = useState("form"); // form | confirm | emitiendo | ok | error
   const [result, setResult] = useState(null);
+  const [impresion, setImpresion] = useState(null); // null=enviando · {impreso, error}
   const [errMsg, setErrMsg] = useState(null);
   const [imprimirOriginal, setImprimirOriginal] = useState(true);
   const [buscando, setBuscando] = useState(false);
@@ -26,7 +30,16 @@ export default function Emitir() {
   const [opciones, setOpciones] = useState(null); // varias personas con el mismo DNI
   const [clientes, setClientes] = useState([]);
 
+  const [ptoVta, setPtoVta] = useState(PTO_VTA);
   useEffect(() => { window.api.listarClientes().then(setClientes).catch(() => {}); }, []);
+  useEffect(() => { window.api.getConfig?.().then((c) => setPtoVta(c?.ptoVta || PTO_VTA)).catch(() => {}); }, []);
+  // Cerrar el modal de confirmación con Escape.
+  useEffect(() => {
+    if (step !== "confirm") return;
+    const h = (e) => { if (e.key === "Escape") setStep("form"); };
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, [step]);
 
   function aplicarCliente(c) {
     if (!c) return;
@@ -78,6 +91,7 @@ export default function Emitir() {
 
   const tbodyRef = useRef(null);
   const focusLast = useRef(false);
+  const emitiendoRef = useRef(false); // guard síncrono anti doble-emisión
 
   function setItem(i, patch) { setItems(items.map((it, j) => (j === i ? { ...it, ...patch } : it))); }
   function addItem() { setItems([...items, itemVacio()]); }
@@ -104,9 +118,11 @@ export default function Emitir() {
   const reales = items.filter((it) => !it.nota && it.desc.trim() && Number(it.precioUnit) > 0 && Number(it.cantidad) > 0);
   const itemsAEmitir = items.filter((it) => (it.nota ? it.desc.trim() : it.desc.trim() && Number(it.precioUnit) > 0 && Number(it.cantidad) > 0));
   const cuitOk = /^\d{11}$/.test(cuitDigits);
+  const docCFValido = !cuitDigits || /^\d{7,8}$/.test(cuitDigits) || /^\d{11}$/.test(cuitDigits); // CF: DNI o CUIT
   // Si eligió un tipo con datos y empezó a cargarlos pero quedaron incompletos, exigir CUIT(11)+nombre.
   const datosIncompletos = !esCFsel && !sinDatos && !(cuitOk && nombre.trim());
-  const puedeEmitir = reales.length > 0 && !datosIncompletos;
+  const cfDocInvalido = esCFsel && !!cuitDigits && !docCFValido; // CF con documento cargado pero inválido
+  const puedeEmitir = reales.length > 0 && !datosIncompletos && !cfDocInvalido;
 
   async function guardarClienteActual() {
     await window.api.guardarCliente({ cuit: String(docNro).replace(/\D/g, ""), nombre, condicion: receptorCond, domicilio });
@@ -116,23 +132,33 @@ export default function Emitir() {
 
   function reset() {
     setReceptorCond("Consumidor Final"); setDocNro(""); setNombre(""); setDomicilio("");
-    setItems([itemVacio()]); setResult(null); setErrMsg(null); setStep("form");
+    setItems([itemVacio()]); setResult(null); setImpresion(null); setErrMsg(null); setStep("form");
+    emitiendoRef.current = false;
   }
 
   async function emitir() {
+    if (emitiendoRef.current) return; // ya se está emitiendo: ignorar clics repetidos
+    emitiendoRef.current = true;
     setStep("emitiendo");
     try {
       const res = await window.api.emitir({
         receptorCond: condEfectiva,
-        docNro: esCF ? "" : docNro, nombre: esCF ? "" : nombre, domicilio: esCF ? "" : domicilio, condVenta,
+        // Se mandan tal cual: el motor decide si el Consumidor Final va identificado (DNI/CUIT) o anónimo.
+        docNro, nombre, domicilio, condVenta,
         items: itemsAEmitir.map((it) => (it.nota
           ? { desc: it.desc, nota: true }
-          : { desc: it.desc, cantidad: Number(it.cantidad), precioUnit: Number(it.precioUnit), unidad: it.unidad, descPct: Number(it.descPct) || 0 })),
-        ptoVta: PTO_VTA,
+          : { desc: it.desc, cantidad: Math.max(0, Number(it.cantidad) || 0), precioUnit: Math.max(0, Number(it.precioUnit) || 0), unidad: it.unidad, descPct: Number(it.descPct) || 0 })),
+        ptoVta,
       });
-      if (res.ok) { setResult(res); setStep("ok"); window.api.imprimirFactura(res.id, imprimirOriginal ? ["ORIGINAL", "DUPLICADO"] : ["DUPLICADO"]); }
-      else { setErrMsg((res.observaciones || []).map((o) => `[${o.code}] ${o.msg}`).join(" · ") || "Rechazada por ARCA"); setStep("error"); }
-    } catch (e) { setErrMsg(e?.message || String(e)); setStep("error"); }
+      if (res.ok) {
+        setResult(res); setImpresion(null); setStep("ok");
+        window.api.imprimirFactura(res.id, imprimirOriginal ? ["ORIGINAL", "DUPLICADO"] : ["DUPLICADO"])
+          .then((pr) => setImpresion(pr || { impreso: false }))
+          .catch((e) => setImpresion({ impreso: false, error: e?.message || String(e) }));
+      }
+      else { setErrMsg(mensajeRechazo(res.observaciones)); setStep("error"); }
+    } catch (e) { setErrMsg(mensajeHumano(e)); setStep("error"); }
+    finally { emitiendoRef.current = false; }
   }
 
   if (step === "ok") {
@@ -148,7 +174,13 @@ export default function Emitir() {
             <div><span>Total</span><b>{money(r.importes.total)}</b></div>
             <div><span>Cliente</span><b>{r.receptor.nombre}</b></div>
           </div>
-          <p className="ok-note">El PDF se generó y abrió automáticamente ({result.nombreArchivo}).</p>
+          <p className="ok-note">
+            {impresion == null
+              ? `El comprobante se generó (${result.nombreArchivo}). Enviando a la impresora…`
+              : impresion.impreso
+                ? `El comprobante se generó y se envió a la impresora (${result.nombreArchivo}).`
+                : `El comprobante se generó (${result.nombreArchivo}), pero no se pudo imprimir automáticamente. Se abrió el PDF para imprimirlo a mano. Revisá la impresora en Opciones.`}
+          </p>
           <button onClick={reset}>Emitir otra</button>
         </div>
       </>
@@ -184,7 +216,15 @@ export default function Emitir() {
               {CLIENTES.map((c) => <option key={c}>{c}</option>)}
             </select>
           </label>
-          {!esCFsel && (
+          {esCFsel ? (
+            <>
+              {cfDocInvalido && <small className="bad">Para identificar al cliente: DNI (7-8 dígitos) o CUIT (11).</small>}
+              <label className="fld"><span>Nombre del cliente (opcional)</span>
+                <input value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Para que figure en la factura" /></label>
+              <label className="fld"><span>Domicilio (opcional)</span>
+                <input value={domicilio} onChange={(e) => setDomicilio(e.target.value)} placeholder="Calle 123 - Ciudad" /></label>
+            </>
+          ) : (
             <>
               {!cuitOk && docNro && <small className="bad">El CUIT debe tener 11 dígitos.</small>}
               <label className="fld"><span>Razón social / Nombre</span>
@@ -201,18 +241,21 @@ export default function Emitir() {
           </label>
         </section>
 
+        <div className="emitir-col2">
+        <CatalogoLentes items={items} setItems={setItems} />
+
         <section className="panel">
           <h3>Ítems</h3>
           <table className="items">
             <thead><tr><th>Descripción</th><th>Cant.</th><th>U. Medida</th><th>Precio (con IVA)</th><th>Desc. %</th><th></th></tr></thead>
             <tbody ref={tbodyRef}>
               {items.map((it, i) => (it.nota ? (
-                <tr key={i} className="nota-row">
+                <tr key={it._id} className="nota-row">
                   <td colSpan="5"><input value={it.desc} onChange={(e) => setItem(i, { desc: e.target.value })} onKeyDown={(e) => onTabUltima(e, i)} placeholder="Ej: N° de Afiliado 12345 — línea sin valor" /></td>
                   <td><button className="del" onClick={() => delItem(i)} title="Quitar">×</button></td>
                 </tr>
               ) : (
-                <tr key={i}>
+                <tr key={it._id}>
                   <td><input value={it.desc} onChange={(e) => setItem(i, { desc: e.target.value })} placeholder="Ej: Anteojo con graduación" /></td>
                   <td><input className="num" type="number" min="0" value={it.cantidad} onChange={(e) => setItem(i, { cantidad: e.target.value })} /></td>
                   <td><select value={it.unidad} onChange={(e) => setItem(i, { unidad: e.target.value })}>{U_MEDIDA.map((u) => <option key={u}>{u}</option>)}</select></td>
@@ -252,17 +295,18 @@ export default function Emitir() {
             Emitir Factura {tipo} — {money(totales.total)}
           </button>
         </section>
+        </div>
       </div>
 
       {step === "confirm" && (
         <div className="modal-bg">
           <div className="modal">
             <h2>Confirmar emisión</h2>
-            <p>Vas a emitir una <b>Factura {tipo}</b> a <b>{esCF ? "Consumidor Final" : nombre}</b> por <b>{money(totales.total)}</b>.</p>
+            <p>Vas a emitir una <b>Factura {tipo}</b> a <b>{nombre.trim() ? nombre : "Consumidor Final"}</b> por <b>{money(totales.total)}</b>.</p>
             <p className="warn">Este comprobante es <b>real y fiscal</b>: queda registrado en ARCA.</p>
             <div className="modal-btns">
               <button className="ghost" onClick={() => setStep("form")}>Cancelar</button>
-              <button onClick={emitir}>Sí, emitir</button>
+              <button disabled={step === "emitiendo"} onClick={emitir}>Sí, emitir</button>
             </div>
           </div>
         </div>
@@ -271,7 +315,7 @@ export default function Emitir() {
       {step === "error" && (
         <div className="modal-bg"><div className="modal">
           <h2>No se pudo emitir</h2>
-          <p className="warn">{errMsg}</p>
+          <p className="warn" style={{ whiteSpace: "pre-line" }}>{errMsg}</p>
           <div className="modal-btns"><button onClick={() => setStep("form")}>Volver</button></div>
         </div></div>
       )}

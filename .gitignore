@@ -16,6 +16,7 @@ facturas/
 .tokens/
 tokens.json
 openssl-arca.cnf
+backups/
 
 # Build / dependencias
 node_modules/
@@ -24,3 +25,9 @@ release/
 .DS_Store
 config.json
 cloud-config.json
+cloud-cred.json
+__test_mejoras.mjs
+
+# Config local de Claude Code (por sesión/máquina, no compartir)
+.claude/settings.local.json
+.claude/scheduled_tasks.lock

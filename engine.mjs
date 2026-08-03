@@ -7,10 +7,11 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import QRCode from "qrcode";
-import { Arca, CbteTipo, IvaTipo, DocTipo, CondicionIva } from "@ramiidv/arca-facturacion";
+import { Arca, CbteTipo, IvaTipo, DocTipo, CondicionIva, Concepto, Moneda } from "@ramiidv/arca-facturacion";
 import { attachTokenPersistence, setTokensDir, saveTicket } from "./ta-store.mjs";
-import { renderFacturaHTML, codigoComprobante } from "./factura-template.mjs";
-import { initDb, guardarFactura, listarFacturas, getFactura, contarFacturas, todasFacturas, guardarCliente as dbGuardarCliente, listarClientes, eliminarCliente as dbEliminarCliente, mergeClientes, mergeFacturas } from "./db.mjs";
+import { renderFacturaHTML, renderPresupuestoHTML, codigoComprobante } from "./factura-template.mjs";
+import { initDb, guardarFactura, listarFacturas, getFactura, contarFacturas, todasFacturas, guardarCliente as dbGuardarCliente, listarClientes, eliminarCliente as dbEliminarCliente, mergeClientes, mergeFacturas,
+  guardarPresupuesto, listarPresupuestos as dbListarPresupuestos, getPresupuesto, marcarPresupuestoFacturado, eliminarPresupuesto as dbEliminarPresupuesto, todosPresupuestos, mergePresupuestos, proximoNumeroPresupuesto } from "./db.mjs";
 import * as cloud from "./cloud.mjs";
 
 let PC = "PC";
@@ -25,7 +26,13 @@ export function setDataDir(dir) {
   DATA_DIR = dir;
   fs.mkdirSync(dir, { recursive: true });
   setTokensDir(dp(".tokens"));
+  cloud.setCredPath(dp("cloud-cred.json")); // credenciales de la nube por PC (no viajan en el instalador)
 }
+
+// ---- Credenciales de la nube (por PC) ----
+export function cloudEstadoCredenciales() { return cloud.estadoCredenciales(); }
+export function cloudGuardarCredenciales(c) { cloud.guardarCredenciales(c); }
+export function cloudProbarCredenciales(c) { return cloud.probarCredenciales(c); }
 
 /** ¿Ya están cargados certificado, clave y datos del emisor? */
 export function estaConfigurado() {
@@ -264,6 +271,50 @@ const COND_MAP = {
   "IVA Sujeto Exento": { cond: CondicionIva.EXENTO, a: false },
 };
 
+/** Parsea el resultado crudo de FECAESolicitar (CAE, vencimiento, número, observaciones). */
+function parseCAE(raw) {
+  const arr = Array.isArray(raw.FeDetResp.FECAEDetResponse) ? raw.FeDetResp.FECAEDetResponse : [raw.FeDetResp.FECAEDetResponse];
+  const det = arr[0];
+  const aprobada = det.Resultado === "A";
+  const observaciones = [];
+  if (det.Observaciones) {
+    const obs = Array.isArray(det.Observaciones.Obs) ? det.Observaciones.Obs : [det.Observaciones.Obs];
+    for (const o of obs) observaciones.push({ code: o.Code, msg: o.Msg });
+  }
+  return { aprobada, cae: aprobada ? det.CAE : undefined, caeVencimiento: aprobada ? det.CAEFchVto : undefined, cbteNro: Number(det.CbteDesde), observaciones, raw };
+}
+
+/**
+ * Construye las líneas a mostrar y los importes (neto/IVA/total) a partir de los
+ * ítems ingresados (precio FINAL con IVA). Lo usan tanto la emisión como el presupuesto.
+ */
+function construirDetalle(items, tipo) {
+  const display = [];
+  let impTotalFinal = 0; // total = exactamente lo que ingresó el cliente (precio FINAL con IVA)
+  for (const it of items) {
+    if (it.nota) { display.push({ codigo: "-", desc: (it.desc || "").toUpperCase(), nota: true }); continue; } // línea sin valor (ej. N° afiliado)
+    const cant = Number(it.cantidad);
+    const precio = Number(it.precioUnit); // siempre se ingresa el precio FINAL (con IVA)
+    const descPct = Math.min(Math.max(Number(it.descPct) || 0, 0), 100); // bonificación 0-100%
+    const brutoFinal = cant * precio;
+    const bonifFinal = round2((brutoFinal * descPct) / 100); // descuento en $ (con IVA)
+    const netoFinalLinea = round2(brutoFinal - bonifFinal); // final con IVA, ya con descuento
+    impTotalFinal = round2(impTotalFinal + netoFinalLinea);
+    const unitNeto = round2(precio / (1 + RATE));
+    const lineNeto = round2(netoFinalLinea / (1 + RATE));
+    display.push({
+      codigo: it.codigo || "-", desc: (it.desc || "").toUpperCase(), cantidad: cant,
+      unidad: it.unidad || "Unidades", bonifPct: descPct,
+      bonifImp: tipo === "A" ? round2((cant * unitNeto * descPct) / 100) : bonifFinal,
+      precioUnit: tipo === "A" ? unitNeto : precio, // A muestra neto (discrimina IVA); B muestra final
+      subtotal: tipo === "A" ? lineNeto : netoFinalLinea,
+    });
+  }
+  const impNeto = round2(impTotalFinal / (1 + RATE));
+  const impIVA = round2(impTotalFinal - impNeto);
+  return { display, impTotalFinal, impNeto, impIVA };
+}
+
 /**
  * Emite un comprobante REAL por ARCA y lo guarda en la base local.
  * Para B el precio ingresado es FINAL (con IVA); para A es NETO (sin IVA).
@@ -274,44 +325,50 @@ export async function emitir({ receptorCond, docNro, nombre, domicilio, condVent
   const map = COND_MAP[receptorCond] || COND_MAP["Consumidor Final"];
   const tipo = map.a ? "A" : "B";
   const cbteTipo = tipo === "A" ? CbteTipo.FACTURA_A : CbteTipo.FACTURA_B;
-  const esCF = receptorCond === "Consumidor Final"; // solo CF va sin datos del receptor
-  const docTipo = esCF ? DocTipo.CONSUMIDOR_FINAL : DocTipo.CUIT;
-  const docNroNum = esCF ? 0 : Number(String(docNro).replace(/\D/g, ""));
+  const esCF = receptorCond === "Consumidor Final";
 
-  const lineItems = [];
-  const display = [];
-  for (const it of items) {
-    if (it.nota) { display.push({ codigo: "-", desc: (it.desc || "").toUpperCase(), nota: true }); continue; } // línea sin valor (ej. N° afiliado)
-    const cant = Number(it.cantidad);
-    const precio = Number(it.precioUnit); // siempre se ingresa el precio FINAL (con IVA)
-    const descPct = Math.min(Math.max(Number(it.descPct) || 0, 0), 100); // bonificación 0-100%
-    const brutoFinal = cant * precio;
-    const bonifFinal = round2((brutoFinal * descPct) / 100); // descuento en $ (con IVA)
-    const netoFinalLinea = brutoFinal - bonifFinal; // final con IVA, ya con descuento
-    const lineNeto = round2(netoFinalLinea / (1 + RATE)); // la app calcula el neto sola
-    const unitNeto = round2(precio / (1 + RATE));
-    lineItems.push({ neto: lineNeto, iva: IvaTipo.IVA_21 });
-    display.push({
-      codigo: it.codigo || "-", desc: (it.desc || "").toUpperCase(), cantidad: cant,
-      unidad: it.unidad || "Unidades", bonifPct: descPct,
-      bonifImp: tipo === "A" ? round2((cant * unitNeto * descPct) / 100) : bonifFinal,
-      precioUnit: tipo === "A" ? unitNeto : precio, // A muestra neto (discrimina IVA); B muestra final
-      subtotal: tipo === "A" ? lineNeto : round2(netoFinalLinea),
-    });
-  }
+  // Documento del receptor. Para Consumidor Final identificarlo es OPCIONAL: si cargan
+  // DNI (7-8) o CUIT (11) la factura sale con sus datos; si no, sale anónima.
+  const digits = String(docNro || "").replace(/\D/g, "");
+  let docTipo, docNroNum;
+  if (!esCF) { docTipo = DocTipo.CUIT; docNroNum = Number(digits); }
+  else if (/^\d{11}$/.test(digits)) { docTipo = DocTipo.CUIT; docNroNum = Number(digits); }
+  else if (/^\d{7,8}$/.test(digits)) { docTipo = DocTipo.DNI; docNroNum = Number(digits); }
+  else { docTipo = DocTipo.CONSUMIDOR_FINAL; docNroNum = 0; }
+  const identificado = docNroNum > 0;
 
-  const result = await getArca().facturar({
-    ptoVta, cbteTipo, docTipo, docNro: docNroNum, condicionIva: map.cond, items: lineItems,
-  });
+  // El IVA se deriva del total final para que NUNCA aparezca el centavo de más:
+  // ImpNeto + ImpIVA == ImpTotal exacto. El IVA queda a <1 centavo del 21% (ARCA lo tolera).
+  const { display, impTotalFinal, impNeto, impIVA } = construirDetalle(items, tipo);
+  const condReceptorId = esCF ? CondicionIva.CONSUMIDOR_FINAL : map.cond;
+  const now = new Date();
+  const fecha = Arca.formatDate(now); // YYYYMMDD
+
+  // Detalle WSFE con importes EXACTOS (ImpNeto + ImpIVA == ImpTotal). Una sola alícuota (21%).
+  const detail = {
+    Concepto: Concepto.PRODUCTOS,
+    DocTipo: docTipo,
+    DocNro: docNroNum,
+    CbteFch: fecha,
+    ImpTotal: impTotalFinal,
+    ImpTotConc: 0,
+    ImpNeto: impNeto,
+    ImpOpEx: 0,
+    ImpTrib: 0,
+    ImpIVA: impIVA,
+    MonId: Moneda.PESOS,
+    MonCotiz: 1,
+    CondicionIVAReceptorId: condReceptorId,
+    Iva: [{ Id: IvaTipo.IVA_21, BaseImp: impNeto, Importe: impIVA }],
+  };
+  const result = parseCAE(await getArca().crearFacturaAuto(ptoVta, cbteTipo, detail));
   if (!result.aprobada) return { ok: false, observaciones: result.observaciones || [] };
 
   const numero = result.cbteNro;
-  const now = new Date();
-  const fecha = Arca.formatDate(now); // YYYYMMDD
   const iso = `${fecha.slice(0, 4)}-${fecha.slice(4, 6)}-${fecha.slice(6, 8)}`;
   const qr = Arca.generateQRUrl({
     fecha: iso, cuit: Number(getEmisor().cuit), ptoVta, tipoCmp: cbteTipo, nroCmp: numero,
-    importe: result.importes.total, moneda: "PES", ctz: 1,
+    importe: impTotalFinal, moneda: "PES", ctz: 1,
     tipoDocRec: docTipo, nroDocRec: docNroNum, codAut: Number(result.cae),
   });
 
@@ -319,19 +376,19 @@ export async function emitir({ receptorCond, docNro, nombre, domicilio, condVent
     clase: "FACTURA", tipo, ptoVta, numero, fecha,
     cae: result.cae, caeVencimiento: result.caeVencimiento,
     receptor: {
-      docLabel: esCF ? "CUIT/DNI" : "CUIT",
-      docNro: esCF ? "-" : String(docNro),
+      docLabel: docTipo === DocTipo.DNI ? "DNI" : "CUIT",
+      docNro: identificado ? String(docNro) : "-",
       nombre: nombre || "Consumidor Final",
       condicion: receptorCond,
       domicilio: domicilio || "-",
       condVenta: condVenta || "Contado",
     },
     items: display,
-    importes: { neto: result.importes.neto, iva: result.importes.iva, otrosTributos: 0, total: result.importes.total },
+    importes: { neto: impNeto, iva: impIVA, otrosTributos: 0, total: impTotalFinal },
     qr,
     raw: result.raw,
   };
-  if (!esCF && nombre) guardarCliente({ cuit: docNroNum, nombre, condicion: receptorCond, domicilio });
+  if (identificado && nombre) guardarCliente({ cuit: docNroNum, nombre, condicion: receptorCond, domicilio });
   const id = Number(guardarFactura(record, now.toISOString()));
   cloud.pushFactura(record, PC).catch(() => {});
   return { ok: true, id, record, nombreArchivo: nombreArchivo(record) };
@@ -393,6 +450,114 @@ export async function emitirNota({ clase, facturaId }) {
   return { ok: true, id, record, nombreArchivo: nombreArchivo(record) };
 }
 
+// ===========================================================================
+//  Presupuestos (documentos NO fiscales: no se conectan a ARCA)
+// ===========================================================================
+
+/** Devuelve el data-URL del logo (el del usuario o el incluido en el programa), o null. */
+function logoDataUrl() {
+  const emisor = getEmisor();
+  let logoPath = emisor.logo && fs.existsSync(dp(emisor.logo)) ? dp(emisor.logo) : null;
+  if (!logoPath && fs.existsSync(path.join(ROOT, "assets", "logo.png"))) logoPath = path.join(ROOT, "assets", "logo.png");
+  if (!logoPath) return null;
+  const ext = path.extname(logoPath).slice(1).toLowerCase();
+  const mime = ext === "svg" ? "image/svg+xml" : ext === "jpg" ? "image/jpeg" : `image/${ext}`;
+  return `data:${mime};base64,${fs.readFileSync(logoPath).toString("base64")}`;
+}
+
+/**
+ * Crea un presupuesto (NO fiscal) y lo guarda en la base local + nube.
+ * Recibe los ítems ya limpios (precio FINAL con IVA), igual que `emitir`.
+ * `validezDias` (opcional) calcula la fecha de vencimiento que figura en el PDF.
+ */
+export function crearPresupuesto({ receptorCond, docNro, nombre, domicilio, condVenta, items, validezDias = 0, observaciones = "" }) {
+  const digits = String(docNro || "").replace(/\D/g, "");
+  const sinDatos = !digits && !(nombre || "").trim();
+  const condEfectiva = (receptorCond === "Consumidor Final" || sinDatos) ? "Consumidor Final" : receptorCond;
+  const map = COND_MAP[condEfectiva] || COND_MAP["Consumidor Final"];
+  const tipo = map.a ? "A" : "B";
+
+  let docLabel = "CUIT/DNI", docNroShow = "-";
+  if (/^\d{11}$/.test(digits)) { docLabel = "CUIT"; docNroShow = String(docNro); }
+  else if (/^\d{7,8}$/.test(digits)) { docLabel = "DNI"; docNroShow = String(docNro); }
+
+  const { display, impTotalFinal, impNeto, impIVA } = construirDetalle(items, tipo);
+
+  const now = new Date();
+  const fecha = Arca.formatDate(now); // YYYYMMDD
+  let vencimiento = null;
+  const dias = Number(validezDias) || 0;
+  if (dias > 0) vencimiento = Arca.formatDate(new Date(now.getTime() + dias * 86_400_000));
+
+  const numero = proximoNumeroPresupuesto();
+  const uid = `P-${PC}-${now.getTime()}-${Math.random().toString(36).slice(2, 8)}`;
+
+  const record = {
+    clase: "PRESUPUESTO", uid, tipo, numero, fecha, validezDias: dias, vencimiento,
+    observaciones: (observaciones || "").trim(),
+    receptor: {
+      docLabel, docNro: docNroShow, nombre: nombre || "Consumidor Final",
+      condicion: condEfectiva, domicilio: domicilio || "-", condVenta: condVenta || "Contado",
+    },
+    items: display,
+    importes: { neto: impNeto, iva: impIVA, otrosTributos: 0, total: impTotalFinal },
+    // Datos crudos para poder facturar el presupuesto tal cual fue cargado.
+    emitirOpts: { receptorCond: condEfectiva, docNro, nombre, domicilio, condVenta, items },
+    estado: "vigente", facturaId: null,
+  };
+  if (/^\d{11}$/.test(digits) && nombre) guardarCliente({ cuit: digits, nombre, condicion: condEfectiva, domicilio });
+  const id = Number(guardarPresupuesto(record, now.toISOString()));
+  cloud.pushPresupuesto(record, PC).catch(() => {});
+  return { ok: true, id, record };
+}
+
+export function listarPresupuestos(q) { return dbListarPresupuestos({ q }); }
+export { getPresupuesto };
+
+/** Genera el HTML de un presupuesto (con logo embebido, sin QR ni CAE). */
+export function presupuestoHTML(record, copias = ["ORIGINAL"]) {
+  return renderPresupuestoHTML({ emisor: getEmisor(), f: record, logoDataUrl: logoDataUrl(), copias });
+}
+export function presupuestoHTMLPorId(id, copias) {
+  const row = getPresupuesto(id);
+  if (!row) throw new Error("Presupuesto no encontrado: " + id);
+  return presupuestoHTML(row.record, copias);
+}
+
+/** Nombre de archivo del PDF del presupuesto. */
+export function nombreArchivoPresupuesto(rec) {
+  const cuit = String(getEmisor().cuit).replace(/\D/g, "");
+  return `${cuit}_PRESUPUESTO_${String(rec.numero).padStart(8, "0")}.pdf`;
+}
+
+/**
+ * Convierte un presupuesto en factura REAL por ARCA (usa sus ítems/cliente tal cual)
+ * y lo marca como facturado. Devuelve el mismo resultado que `emitir`.
+ */
+export async function facturarPresupuesto(id) {
+  const row = getPresupuesto(id);
+  if (!row) throw new Error("Presupuesto no encontrado.");
+  if (row.estado === "facturado") throw new Error("Ese presupuesto ya fue facturado.");
+  const opts = row.record?.emitirOpts;
+  if (!opts) throw new Error("El presupuesto no tiene datos para facturar.");
+  const res = await emitir({ ...opts, ptoVta: opts.ptoVta || getPtoVta() });
+  if (res.ok) {
+    const r = res.record;
+    const comp = `Factura ${r.tipo} ${String(r.ptoVta).padStart(5, "0")}-${String(r.numero).padStart(8, "0")}`;
+    marcarPresupuestoFacturado(id, comp);
+    const upd = getPresupuesto(id);
+    if (upd) cloud.pushPresupuesto(upd.record, PC).catch(() => {});
+  }
+  return res;
+}
+
+/** Elimina un presupuesto (local + nube). */
+export function eliminarPresupuesto(id) {
+  const uid = dbEliminarPresupuesto(id);
+  if (uid) cloud.deletePresupuesto(uid).catch(() => {});
+  return true;
+}
+
 /** Genera el HTML de un comprobante (con QR y logo embebidos). */
 export async function comprobanteHTML(record, copias) {
   const emisor = getEmisor();
@@ -411,7 +576,34 @@ export async function comprobanteHTML(record, copias) {
 
 // ---- Configuración de la app (carpeta de guardado, etc.) ----
 
-const CONFIG_DEFAULT = { carpetaFacturas: "", preguntarDonde: false };
+// Catálogo rápido de lentes (Presupuestos): precios editables desde la app (Presupuestos →
+// "Editar catálogo"), sin tocar código. Guardado en config.json, por PC (no viaja por la nube).
+//  - pares: mismo cristal en los dos ojos (precio del par).
+//  - porLente: precio YA por lente (ej. Rango Extendido): no se divide a la mitad.
+//  - extras: adicionales de una sola fila (Antirreflex, armazones, etc.).
+const CATALOGO_LENTES_DEFAULT = {
+  pares: [
+    { id: "organico-blanco", label: "Orgánico Blanco stock", precio: 40000 },
+    { id: "bluecut-ar", label: "Bluecut con AR stock", precio: 50000 },
+    { id: "fotocromatico-ar", label: "Fotocromático con AR", precio: 80000 },
+    { id: "fotocromatico-bluecut-ar", label: "Fotocromático Bluecut con AR", precio: 100000 },
+    { id: "bifocal-blanco", label: "Bifocal Blanco", precio: 70000 },
+    { id: "bifocal-bluecut", label: "Bifocal Bluecut", precio: 100000 },
+    { id: "bifocal-fotocromatico", label: "Bifocal Fotocromático", precio: 130000 },
+    { id: "bifocal-fotocromatico-bluecut", label: "Bifocal Fotocromático Bluecut", precio: 160000 },
+  ],
+  porLente: [
+    { id: "rext-blanco", label: "R. Extendido Blanco", precio: 25000 },
+    { id: "rext-bluecut-ar", label: "R. Extendido Bluecut con AR", precio: 35000 },
+  ],
+  extras: [
+    { id: "antirreflex", label: "Antirreflex", precio: 30000 },
+  ],
+};
+
+const CONFIG_DEFAULT = { carpetaFacturas: "", preguntarDonde: false, autoImprimir: true, impresora: "", dialogoImpresion: false, ptoVta: 7, catalogoLentes: CATALOGO_LENTES_DEFAULT };
+/** Punto de venta configurado (por defecto 7). */
+export function getPtoVta() { return Number(_config?.ptoVta) || 7; }
 let _configPath, _config;
 
 function guardarConfig() {
@@ -449,7 +641,29 @@ export function initEngine({ dataDir, carpetaDefault }) {
     : { ...CONFIG_DEFAULT };
   if (!_config.carpetaFacturas) _config.carpetaFacturas = carpetaDefault;
   guardarConfig();
+  backupDatos(); // resguardo diario de la base local
   iniciarRenovadorToken(); // mantiene el token de ARCA fresco y compartido
+}
+
+/** Ruta del archivo de base local (datos.json). */
+export function rutaDatos() { return dp("datos.json"); }
+
+/**
+ * Copia de seguridad diaria de datos.json a la carpeta backups/ (una por día,
+ * conserva las últimas 7). Best-effort: nunca interrumpe el arranque.
+ */
+export function backupDatos() {
+  try {
+    const src = dp("datos.json");
+    if (!fs.existsSync(src)) return;
+    const dir = dp("backups");
+    fs.mkdirSync(dir, { recursive: true });
+    const hoy = new Date().toISOString().slice(0, 10);
+    const dest = path.join(dir, `datos-${hoy}.json`);
+    if (!fs.existsSync(dest)) fs.copyFileSync(src, dest); // una copia por día
+    const files = fs.readdirSync(dir).filter((f) => /^datos-\d{4}-\d{2}-\d{2}\.json$/.test(f)).sort();
+    while (files.length > 7) { try { fs.unlinkSync(path.join(dir, files.shift())); } catch { /* ignora */ } }
+  } catch { /* backup best-effort */ }
 }
 
 /** Importa los comprobantes reales ya emitidos (archivos facturas/*.json). */
@@ -473,23 +687,40 @@ export { listarFacturas, getFactura, contarFacturas, listarClientes };
 export function guardarCliente(c) { dbGuardarCliente(c); cloud.pushCliente(c).catch(() => {}); }
 export function eliminarCliente(cuit) { dbEliminarCliente(cuit); cloud.deleteCliente(cuit).catch(() => {}); }
 
+let _ultimaSync = null; // { at, ok, offline, subidas, bajadas, error }
+/** Último resultado de sincronización (para el indicador de la interfaz). */
+export function estadoSync() { return _ultimaSync; }
+
 /** Sincroniza con la nube: baja todo lo de las otras PCs y sube lo local que falte. */
 export async function sincronizarNube() {
+  let res;
   try {
-    if (!(await cloud.nubeDisponible())) return { ok: false, offline: true };
-    const [cloudFac, cloudCli] = await Promise.all([cloud.fetchFacturas(), cloud.fetchClientes()]);
-    mergeFacturas(cloudFac);
+    if (!(await cloud.nubeDisponible())) { res = { ok: false, offline: true }; _ultimaSync = { at: Date.now(), ...res }; return res; }
+    const [cloudFac, cloudCli, cloudPre] = await Promise.all([cloud.fetchFacturas(), cloud.fetchClientes(), cloud.fetchPresupuestos().catch(() => [])]);
+    const bajFac = mergeFacturas(cloudFac) || 0;
     mergeClientes(cloudCli);
+    const bajPre = mergePresupuestos(cloudPre) || 0;
+    let subidas = 0;
     const keys = new Set(cloudFac.map((r) => `${r.clase}-${r.tipo}-${r.pto_vta}-${r.numero}`));
     for (const f of todasFacturas()) {
-      if (!keys.has(`${f.clase}-${f.tipo}-${f.ptoVta}-${f.numero}`)) await cloud.pushFactura(f.record, PC).catch(() => {});
+      if (!keys.has(`${f.clase}-${f.tipo}-${f.ptoVta}-${f.numero}`)) { await cloud.pushFactura(f.record, PC).catch(() => {}); subidas++; }
     }
     const cuits = new Set(cloudCli.map((c) => String(c.cuit)));
     for (const c of listarClientes()) {
-      if (!cuits.has(c.cuit)) await cloud.pushCliente(c).catch(() => {});
+      if (!cuits.has(c.cuit)) { await cloud.pushCliente(c).catch(() => {}); subidas++; }
     }
-    return { ok: true };
-  } catch (e) { return { ok: false, error: e.message }; }
+    // Presupuestos: subir los locales que la nube no tenga (o que cambiaron de estado).
+    const preCloud = new Map(cloudPre.map((r) => [r.uid, r]));
+    for (const p of todosPresupuestos()) {
+      const enNube = preCloud.get(p.uid);
+      if (!enNube || (p.estado === "facturado" && enNube.estado !== "facturado")) {
+        await cloud.pushPresupuesto(p.record, PC).catch(() => {}); subidas++;
+      }
+    }
+    res = { ok: true, subidas, bajadas: bajFac + bajPre };
+    _ultimaSync = { at: Date.now(), ...res };
+    return res;
+  } catch (e) { res = { ok: false, error: e.message }; _ultimaSync = { at: Date.now(), ...res }; return res; }
 }
 
 // ---- Pedidos de la tienda web ----
@@ -540,7 +771,7 @@ export async function facturarPedido(orderId) {
     } catch { /* sin padrón → queda Consumidor Final (B) */ }
   }
 
-  const res = await emitir({ ...receptor, condVenta: "Otra", ptoVta: 7, items: lineas });
+  const res = await emitir({ ...receptor, condVenta: "Otra", ptoVta: getPtoVta(), items: lineas });
   if (res.ok) {
     const r = res.record;
     const comp = `Factura ${r.tipo} ${String(r.ptoVta).padStart(5, "0")}-${String(r.numero).padStart(8, "0")}`;
@@ -567,10 +798,61 @@ export function resumenInicio() {
   const ultimas = todas.slice(-6).reverse().map((f) => ({
     id: f.id, clase: f.clase, tipo: f.tipo, ptoVta: f.ptoVta, numero: f.numero, fecha: f.fecha, total: f.total, receptor: f.receptorNombre,
   }));
+  // Presupuestos vigentes (no facturados): cantidad y monto, para tenerlos a la vista.
+  const presup = todosPresupuestos();
+  const vigentes = presup.filter((p) => p.estado !== "facturado");
   return {
     hoy: { total: neto(deHoy), count: cuenta(deHoy) },
     mes: { total: neto(deMes), count: cuenta(deMes) },
+    presupuestos: {
+      vigentesCount: vigentes.length,
+      vigentesTotal: vigentes.reduce((s, p) => s + (p.total || 0), 0),
+      mesCount: presup.filter((p) => (p.fecha || "").startsWith(mes)).length,
+    },
     ultimas,
+  };
+}
+
+// ---- Dashboard: métricas ampliadas ----
+const MES_CORTO = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
+export function metricasDashboard() {
+  const todas = todasFacturas();
+  const ahora = new Date();
+  // Serie de los últimos 6 meses (total neto de facturación e IVA).
+  const meses = [];
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(ahora.getFullYear(), ahora.getMonth() - i, 1);
+    const ym = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}`;
+    const arr = todas.filter((f) => (f.fecha || "").startsWith(ym));
+    meses.push({
+      ym, etiqueta: MES_CORTO[d.getMonth()],
+      total: arr.reduce((s, f) => s + signo(f) * (f.total || 0), 0),
+      iva: arr.reduce((s, f) => s + signo(f) * (f.record?.importes?.iva || 0), 0),
+      count: arr.filter((f) => f.clase === "FACTURA").length,
+    });
+  }
+  // Top clientes de los últimos 12 meses (sin Consumidor Final).
+  const d12 = new Date(ahora.getFullYear(), ahora.getMonth() - 11, 1);
+  const ymDesde = `${d12.getFullYear()}${String(d12.getMonth() + 1).padStart(2, "0")}00`;
+  const porCliente = {};
+  for (const f of todas) {
+    if ((f.fecha || "") < ymDesde) continue;
+    const nom = f.receptorNombre || "Consumidor Final";
+    if (nom === "Consumidor Final") continue;
+    porCliente[nom] = (porCliente[nom] || 0) + signo(f) * (f.total || 0);
+  }
+  const topClientes = Object.entries(porCliente)
+    .map(([nombre, total]) => ({ nombre, total })).filter((x) => x.total > 0)
+    .sort((a, b) => b.total - a.total).slice(0, 5);
+  // Composición A vs B del mes actual.
+  const ymMes = meses[meses.length - 1].ym;
+  const delMes = todas.filter((f) => (f.fecha || "").startsWith(ymMes) && f.clase === "FACTURA");
+  return {
+    meses,
+    topClientes,
+    mesActual: meses[meses.length - 1],
+    mesAnterior: meses[meses.length - 2],
+    composicion: { A: delMes.filter((f) => f.tipo === "A").length, B: delMes.filter((f) => f.tipo === "B").length },
   };
 }
 
@@ -584,7 +866,19 @@ export function reporte({ desde, hasta } = {}) {
     neto += sgn * (imp.neto || 0); iva += sgn * (imp.iva || 0); total += sgn * (f.total || 0);
     return { clase: f.clase, tipo: f.tipo, ptoVta: f.ptoVta, numero: f.numero, fecha: f.fecha, receptor: f.receptorNombre, neto: imp.neto || 0, iva: imp.iva || 0, total: f.total || 0, cae: f.cae };
   }).sort((a, b) => a.fecha.localeCompare(b.fecha));
-  return { filas, totales: { neto, iva, total, count: en.length } };
+
+  // Presupuestos del período (sección aparte: NO son comprobantes fiscales).
+  const enP = todosPresupuestos().filter((p) => (!desde || p.fecha >= desde) && (!hasta || p.fecha <= hasta));
+  let presupTotal = 0;
+  const presupuestos = enP.map((p) => {
+    presupTotal += p.total || 0;
+    return { numero: p.numero, fecha: p.fecha, receptor: p.receptorNombre, total: p.total || 0, estado: p.estado || "vigente", facturaId: p.facturaId || null };
+  }).sort((a, b) => a.fecha.localeCompare(b.fecha));
+
+  return {
+    filas, totales: { neto, iva, total, count: en.length },
+    presupuestos, presupTotales: { total: presupTotal, count: enP.length },
+  };
 }
 
 const CLASE_TXT = { FACTURA: "Factura", NC: "Nota de Crédito", ND: "Nota de Débito" };
@@ -592,7 +886,7 @@ const numAr = (n) => Number(n || 0).toFixed(2).replace(".", ",");
 
 /** Genera el CSV del reporte (separador ; y decimales con coma, para Excel ARG). */
 export function reporteCSV(filtro) {
-  const { filas, totales } = reporte(filtro);
+  const { filas, totales, presupuestos, presupTotales } = reporte(filtro);
   const fmtF = (s) => `${s.slice(6, 8)}/${s.slice(4, 6)}/${s.slice(0, 4)}`;
   const head = ["Fecha", "Comprobante", "Pto Vta", "Número", "Cliente", "Neto", "IVA", "Total", "CAE"];
   const rows = filas.map((f) => [
@@ -601,6 +895,17 @@ export function reporteCSV(filtro) {
   ]);
   rows.push([]);
   rows.push(["", "", "", "", "TOTALES", numAr(totales.neto), numAr(totales.iva), numAr(totales.total), ""]);
+
+  // Sección aparte: presupuestos (no fiscales).
+  if (presupuestos && presupuestos.length) {
+    rows.push([]);
+    rows.push(["PRESUPUESTOS (no fiscales)"]);
+    rows.push(["Fecha", "Número", "Cliente", "Total", "Estado", "Facturado como", "", "", ""]);
+    for (const p of presupuestos) {
+      rows.push([fmtF(p.fecha), String(p.numero).padStart(8, "0"), p.receptor, numAr(p.total), p.estado === "facturado" ? "Facturado" : "Vigente", p.facturaId || "", "", "", ""]);
+    }
+    rows.push(["", "", "TOTAL PRESUPUESTOS", numAr(presupTotales.total), `${presupTotales.count} presup.`, "", "", "", ""]);
+  }
   return [head, ...rows].map((r) => r.map((c) => `"${String(c ?? "").replace(/"/g, '""')}"`).join(";")).join("\r\n");
 }
 

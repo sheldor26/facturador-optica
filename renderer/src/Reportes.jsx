@@ -20,11 +20,13 @@ export default function Reportes({ toast }) {
   const [data, setData] = useState(null);
 
   async function generar() {
+    if (desde > hasta) { toast?.("La fecha 'Desde' no puede ser posterior a 'Hasta'.", "error"); return; }
     setData(await window.api.reporteDatos({ desde: ymd(desde), hasta: ymd(hasta) }));
   }
   useEffect(() => { generar(); }, []);
 
   async function exportar() {
+    if (desde > hasta) { toast?.("La fecha 'Desde' no puede ser posterior a 'Hasta'.", "error"); return; }
     try {
       const r = await window.api.reporteExportar({ desde: ymd(desde), hasta: ymd(hasta) });
       if (r) toast?.("Exportado y abierto en Excel.");
@@ -75,6 +77,28 @@ export default function Reportes({ toast }) {
           )}
         </tbody>
       </table>
+
+      {data?.presupuestos?.length > 0 && (
+        <section style={{ marginTop: 26 }}>
+          <h2 style={{ margin: "0 0 10px" }}>Presupuestos (no fiscales) · {data.presupTotales.count} · {money(data.presupTotales.total)}</h2>
+          <table className="grid">
+            <thead>
+              <tr><th>Fecha</th><th>Número</th><th>Cliente</th><th className="r">Total</th><th>Estado</th></tr>
+            </thead>
+            <tbody>
+              {data.presupuestos.map((p, i) => (
+                <tr key={i}>
+                  <td>{fmt(p.fecha)}</td>
+                  <td><b>N° {String(p.numero).padStart(8, "0")}</b></td>
+                  <td>{p.receptor}</td>
+                  <td className="r">{money(p.total)}</td>
+                  <td>{p.estado === "facturado" ? <span className="pill online" title={p.facturaId || ""}>Facturado</span> : <span className="pill">Vigente</span>}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      )}
     </>
   );
 }
