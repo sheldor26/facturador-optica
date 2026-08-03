@@ -738,15 +738,8 @@ export async function pedidosPendientes() {
   } catch { return []; }
 }
 
-/** Factura un pedido de la web (Factura B, consumidor final) y marca el CAE en el pedido. */
-export async function facturarPedido(orderId) {
-  const { order, items } = await cloud.getPedidoConItems(orderId);
-  if (!order) throw new Error("Pedido no encontrado.");
-  if (order.invoice_cae) throw new Error("Ese pedido ya está facturado.");
-  const total = (order.total_cents || 0) / 100;
-  if (total <= 0) throw new Error("El pedido no tiene importe.");
-
-  // Detalle: si no hay descuento, una línea por producto + envío; si hay, una sola línea por el total.
+/** Arma las líneas de factura de un pedido: una por producto + envío, o una sola por el total si hay descuento. */
+function lineasDePedido(order, items) {
   let lineas;
   if (!order.discount_cents && items.length) {
     lineas = items.map((it) => ({
@@ -758,20 +751,59 @@ export async function facturarPedido(orderId) {
     if (order.shipping_cents > 0) lineas.push({ desc: "Envío", cantidad: 1, precioUnit: order.shipping_cents / 100, unidad: "Unidades" });
   } else {
     const nombres = items.map((it) => it.product_name).filter(Boolean).join(", ").slice(0, 120) || "Artículos de óptica";
-    lineas = [{ desc: `Pedido web #${order.order_number} - ${nombres}`, cantidad: 1, precioUnit: total, unidad: "Unidades" }];
+    lineas = [{ desc: `Pedido web #${order.order_number} - ${nombres}`, cantidad: 1, precioUnit: (order.total_cents || 0) / 100, unidad: "Unidades" }];
   }
+  return lineas;
+}
 
-  // Detectar A o B según el CUIT/DNI del comprador (consulta el padrón de ARCA).
+/**
+ * Detalle de un pedido antes de facturarlo: los ítems tal cual van a quedar en la factura,
+ * y el comprador resuelto por padrón (o la lista de personas para elegir, si el DNI da varias).
+ */
+export async function detallePedido(orderId) {
+  const { order, items } = await cloud.getPedidoConItems(orderId);
+  if (!order) throw new Error("Pedido no encontrado.");
+  const lineas = lineasDePedido(order, items);
   let receptor = { receptorCond: "Consumidor Final", docNro: "", nombre: "", domicilio: "" };
+  let opciones = null;
   if (order.customer_dni) {
     try {
       const { personas } = await consultarPadron(order.customer_dni);
+      if (personas.length === 1) {
+        const p = personas[0];
+        receptor = { receptorCond: p.condicion, docNro: String(p.cuit), nombre: p.nombre, domicilio: p.domicilio };
+      } else if (personas.length > 1) {
+        opciones = personas; // varias personas con el mismo DNI: que elija quien factura
+      }
+    } catch { /* sin padrón → queda Consumidor Final (B) */ }
+  }
+  return { items: lineas, receptor, opciones, total: (order.total_cents || 0) / 100 };
+}
+
+/**
+ * Factura un pedido de la web y marca el CAE en el pedido. `receptor`, si viene (ya sea el
+ * sugerido por `detallePedido` o el elegido a mano cuando había varias personas con el mismo
+ * DNI), se usa tal cual y no se vuelve a consultar el padrón.
+ */
+export async function facturarPedido(orderId, receptor) {
+  const { order, items } = await cloud.getPedidoConItems(orderId);
+  if (!order) throw new Error("Pedido no encontrado.");
+  if (order.invoice_cae) throw new Error("Ese pedido ya está facturado.");
+  const total = (order.total_cents || 0) / 100;
+  if (total <= 0) throw new Error("El pedido no tiene importe.");
+
+  const lineas = lineasDePedido(order, items);
+
+  let receptorFinal = receptor || { receptorCond: "Consumidor Final", docNro: "", nombre: "", domicilio: "" };
+  if (!receptor && order.customer_dni) {
+    try {
+      const { personas } = await consultarPadron(order.customer_dni);
       const p = personas[0];
-      if (p) receptor = { receptorCond: p.condicion, docNro: String(p.cuit), nombre: p.nombre, domicilio: p.domicilio };
+      if (p) receptorFinal = { receptorCond: p.condicion, docNro: String(p.cuit), nombre: p.nombre, domicilio: p.domicilio };
     } catch { /* sin padrón → queda Consumidor Final (B) */ }
   }
 
-  const res = await emitir({ ...receptor, condVenta: "Otra", ptoVta: getPtoVta(), items: lineas });
+  const res = await emitir({ ...receptorFinal, condVenta: "Otra", ptoVta: getPtoVta(), items: lineas });
   if (res.ok) {
     const r = res.record;
     const comp = `Factura ${r.tipo} ${String(r.ptoVta).padStart(5, "0")}-${String(r.numero).padStart(8, "0")}`;

@@ -7,6 +7,9 @@ export default function Pedidos({ toast }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [conf, setConf] = useState(null); // pedido a facturar
+  const [detalle, setDetalle] = useState(null); // { items, receptor, opciones, total }
+  const [cargandoDetalle, setCargandoDetalle] = useState(false);
+  const [receptorElegido, setReceptorElegido] = useState(null); // cuando hay varias personas con el mismo DNI
   const [working, setWorking] = useState(false);
   const facturandoRef = useRef(false); // guard síncrono anti doble-emisión
 
@@ -17,12 +20,27 @@ export default function Pedidos({ toast }) {
   }
   useEffect(() => { cargar(); }, []);
 
+  // Al abrir "Facturar", trae el detalle real del pedido (ítems + comprador resuelto por padrón)
+  // antes de dejar confirmar — así no se emite una factura fiscal a ciegas.
+  useEffect(() => {
+    if (!conf) { setDetalle(null); setReceptorElegido(null); return; }
+    setCargandoDetalle(true);
+    window.api.pedidoDetalle(conf.id)
+      .then((d) => { setDetalle(d); setReceptorElegido(d.opciones ? null : d.receptor); })
+      .catch((e) => { toast?.(mensajeHumano(e), "error"); setConf(null); })
+      .finally(() => setCargandoDetalle(false));
+  }, [conf]);
+
+  function elegirPersona(p) {
+    setReceptorElegido({ receptorCond: p.condicion, docNro: String(p.cuit), nombre: p.nombre, domicilio: p.domicilio });
+  }
+
   async function facturar() {
     if (facturandoRef.current) return; // ya se está facturando: ignorar clics repetidos
     facturandoRef.current = true;
     setWorking(true);
     try {
-      const res = await window.api.facturarPedido(conf.id);
+      const res = await window.api.facturarPedido(conf.id, receptorElegido);
       if (res.ok) {
         toast?.("Pedido facturado: " + res.record.cae);
         window.api.imprimirFactura(res.id, ["ORIGINAL", "DUPLICADO"]);
@@ -69,10 +87,43 @@ export default function Pedidos({ toast }) {
         </tbody>
       </table>
 
-      {conf && (
+      {conf && cargandoDetalle && (
         <div className="modal-bg"><div className="modal">
           <h2>Facturar pedido #{conf.numero}</h2>
-          <p>Se va a emitir la <b>factura</b> por <b>{money(conf.total)}</b>. El tipo (A o B) se decide según el CUIT/DNI del comprador{conf.dni ? ` (${conf.dni})` : ""}.</p>
+          <p><span className="spin-row"><span className="spinner" /> Trayendo el detalle del pedido…</span></p>
+        </div></div>
+      )}
+
+      {conf && !cargandoDetalle && detalle?.opciones && !receptorElegido && (
+        <div className="modal-bg"><div className="modal">
+          <h2>Hay más de una persona con ese DNI</h2>
+          <p>Elegí el comprador correcto:</p>
+          <div className="opciones">
+            {detalle.opciones.map((p) => (
+              <button key={p.cuit} className="opcion" onClick={() => elegirPersona(p)}>
+                <b>{p.nombre}</b>
+                <span>CUIT {p.cuit} · {p.condicion}</span>
+              </button>
+            ))}
+          </div>
+          <div className="modal-btns"><button className="ghost" onClick={() => setConf(null)}>Cancelar</button></div>
+        </div></div>
+      )}
+
+      {conf && !cargandoDetalle && detalle && receptorElegido && (
+        <div className="modal-bg"><div className="modal">
+          <h2>Facturar pedido #{conf.numero}</h2>
+          <table className="grid mini-grid" style={{ marginBottom: 12 }}>
+            <tbody>
+              {detalle.items.map((it, i) => (
+                <tr key={i}>
+                  <td>{it.desc}{it.cantidad > 1 ? ` × ${it.cantidad}` : ""}</td>
+                  <td className="r">{money(it.cantidad * it.precioUnit)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p>Se va a emitir una <b>factura</b> a <b>{receptorElegido.nombre?.trim() ? receptorElegido.nombre : "Consumidor Final"}</b> por <b>{money(detalle.total)}</b>.</p>
           <p className="warn">Comprobante real y fiscal. Se marca el CAE en el pedido de la web.</p>
           <div className="modal-btns">
             <button className="ghost" onClick={() => setConf(null)} disabled={working}>Cancelar</button>
