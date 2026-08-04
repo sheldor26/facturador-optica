@@ -602,7 +602,34 @@ app.whenReady().then(async () => {
   setInterval(() => eng.sincronizarNube().catch(() => {}), 12 * 60 * 1000); // reintento periódico cada 12 min
   createWindow();
   // Auto-actualización: chequea GitHub Releases y baja la versión nueva si hay.
-  if (!isDev) autoUpdater.checkForUpdatesAndNotify().catch(() => {});
+  // Antes usaba checkForUpdatesAndNotify(), que solo avisa con la notificación
+  // nativa del sistema (en inglés, fácil de perderse) y no deja ver si la
+  // descarga falló (el error quedaba tragado). Ahora: si está lista, un diálogo
+  // propio con un botón claro para reiniciar ya mismo; si falla, queda en el
+  // log en vez de desaparecer en silencio. Si el usuario ignora el diálogo, se
+  // instala sola al cerrar el programa la próxima vez (comportamiento por
+  // defecto de electron-updater).
+  if (!isDev) {
+    autoUpdater.on("error", (err) => {
+      console.error("[auto-actualización] falló el chequeo/descarga:", err?.message || err);
+    });
+    autoUpdater.on("update-downloaded", (info) => {
+      dialog.showMessageBox({
+        type: "info",
+        title: "Actualización lista",
+        message: `Hay una versión nueva (v${info.version}) ya descargada.`,
+        detail: "Se recomienda reiniciar ahora para instalarla. Si elegís \"Después\", se instala sola la próxima vez que cierres el programa.",
+        buttons: ["Reiniciar ahora", "Después"],
+        defaultId: 0,
+        cancelId: 1,
+      }).then(({ response }) => {
+        if (response === 0) autoUpdater.quitAndInstall();
+      });
+    });
+    autoUpdater.checkForUpdates().catch((err) => {
+      console.error("[auto-actualización] no se pudo chequear:", err?.message || err);
+    });
+  }
 });
 app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
