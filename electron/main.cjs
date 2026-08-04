@@ -74,23 +74,27 @@ function nombreLibre(dir, nombre) {
   return final;
 }
 
-// Genera un PDF A4 a partir de HTML, usando el Chromium interno de Electron.
-async function htmlToPdf(html, outPath) {
+// Genera un PDF A4 a partir de HTML, usando el Chromium interno de Electron. Devuelve el Buffer.
+async function htmlToPdfBuffer(html) {
   const tmpHtml = path.join(os.tmpdir(), `fact-${Date.now()}.html`);
   fs.writeFileSync(tmpHtml, html);
   const win = new BrowserWindow({ show: false });
   try {
     await win.loadFile(tmpHtml);
-    const pdf = await win.webContents.printToPDF({
+    return await win.webContents.printToPDF({
       pageSize: "A4",
       printBackground: true,
       margins: { top: 0, bottom: 0, left: 0, right: 0 },
     });
-    fs.writeFileSync(outPath, pdf);
   } finally {
     win.destroy();
     fs.existsSync(tmpHtml) && fs.unlinkSync(tmpHtml);
   }
+}
+
+async function htmlToPdf(html, outPath) {
+  const pdf = await htmlToPdfBuffer(html);
+  fs.writeFileSync(outPath, pdf);
   return outPath;
 }
 
@@ -144,7 +148,34 @@ ipcMain.handle("facturas:listar", async (_e, q) => (await engine()).listarFactur
 ipcMain.handle("nube:sincronizar", async () => (await engine()).sincronizarNube());
 ipcMain.handle("pedidos:listar", async () => (await engine()).pedidosPendientes());
 ipcMain.handle("pedido:detalle", async (_e, id) => (await engine()).detallePedido(id));
-ipcMain.handle("pedido:facturar", async (_e, id, receptor) => (await engine()).facturarPedido(id, receptor));
+ipcMain.handle("pedido:facturar", async (_e, id, receptor) => {
+  const eng = await engine();
+  const res = await eng.facturarPedido(id, receptor);
+  if (res.ok) {
+    // Best-effort: la factura ya se emitió con CAE (lo importante). Esto solo evita
+    // tener que entrar a la tienda a pegar el link y tildar "avisar por mail" a mano.
+    try {
+      const html = await eng.comprobanteHTMLPorId(res.id, ["ORIGINAL"]);
+      const pdf = await htmlToPdfBuffer(html);
+      const cld = await cloud();
+      const subida = await cld.subirComprobantePublico(eng.nombreArchivo(res.record), pdf);
+      if (subida.ok) {
+        res.linkTienda = true;
+        // La tienda guarda el link Y manda el mail (mismo texto que el panel admin).
+        const noti = await cld.notificarFacturaTienda(id, subida.url);
+        if (noti.ok) {
+          res.mailEnviado = !!noti.emailed;
+        } else {
+          // La tienda no está configurada en esta PC, está caída, o lo que sea:
+          // al menos dejamos el link cargado como antes, sin mail automático.
+          await cld.marcarPedidoFacturado(id, { invoice_url: subida.url }).catch(() => {});
+          res.mailEnviado = false;
+        }
+      }
+    } catch { /* no bloquea la emisión si falla la subida del link o el aviso */ }
+  }
+  return res;
+});
 ipcMain.handle("app:resumen", async () => (await engine()).resumenInicio());
 ipcMain.handle("app:metricas", async () => (await engine()).metricasDashboard());
 ipcMain.handle("clientes:listar", async (_e, q) => (await engine()).listarClientes(q));
@@ -185,6 +216,19 @@ ipcMain.handle("factura:compartir", async (_e, { id, medio, destino }) => {
   }
   shell.showItemInFolder(outPath); // revela el PDF para adjuntarlo
   return outPath;
+});
+// Sube el PDF del comprobante al bucket público "comprobantes" y devuelve el link directo,
+// para pegar en la tienda online (ej. el campo "Factura" de un pedido) o mandar por donde sea.
+ipcMain.handle("factura:subirPublico", async (_e, id) => {
+  const eng = await engine();
+  const row = eng.getFactura(id);
+  if (!row) throw new Error("Comprobante no encontrado");
+  const html = await eng.comprobanteHTMLPorId(id, ["ORIGINAL"]);
+  const pdf = await htmlToPdfBuffer(html);
+  const cld = await cloud();
+  const res = await cld.subirComprobantePublico(eng.nombreArchivo(row.record), pdf);
+  if (!res.ok) throw new Error(res.error || "No se pudo subir el comprobante.");
+  return res.url;
 });
 ipcMain.handle("factura:imprimir", async (_e, id, copias) => {
   const eng = await engine();
@@ -304,6 +348,10 @@ ipcMain.handle("cloud:guardarCred", async (_e, c) => {
   eng.sincronizarNube().catch(() => {}); // reconectar con las nuevas credenciales
   return true;
 });
+
+// ---- Tienda online: avisar por mail al facturar un pedido web (por PC) ----
+ipcMain.handle("tienda:estadoCred", async () => (await engine()).tiendaEstadoCred());
+ipcMain.handle("tienda:guardarCred", async (_e, c) => { (await engine()).tiendaGuardarCred(c); return true; });
 
 // ---- Configuración / opciones ----
 ipcMain.handle("config:get", async () => (await engine()).getConfig());

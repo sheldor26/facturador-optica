@@ -13,11 +13,33 @@ export default function Opciones() {
   const [credProbando, setCredProbando] = useState(false);
   const [exportMsg, setExportMsg] = useState(null);
 
+  // Tienda online (URL + secreto, por PC): avisar por mail al facturar un pedido web
+  const [tiendaEstado, setTiendaEstado] = useState(null); // { configurada, apiUrl }
+  const [tiendaUrl, setTiendaUrl] = useState("");
+  const [tiendaSecreto, setTiendaSecreto] = useState("");
+  const [tiendaMsg, setTiendaMsg] = useState(null); // { ok, texto }
+  const [tiendaGuardando, setTiendaGuardando] = useState(false);
+
   useEffect(() => { window.api.getConfig().then(setCfg); }, []);
   useEffect(() => { window.api.listarImpresoras?.().then(setImpresoras).catch(() => {}); }, []);
   useEffect(() => {
     window.api.cloudEstadoCred?.().then((e) => { setCredEstado(e); if (e?.email) setCredEmail(e.email); }).catch(() => {});
   }, []);
+  useEffect(() => {
+    window.api.tiendaEstadoCred?.().then((e) => { setTiendaEstado(e); if (e?.apiUrl) setTiendaUrl(e.apiUrl); }).catch(() => {});
+  }, []);
+
+  async function guardarTienda() {
+    if (!tiendaUrl.trim() || !tiendaSecreto) { setTiendaMsg({ ok: false, texto: "Completá la URL y el secreto." }); return; }
+    setTiendaGuardando(true); setTiendaMsg(null);
+    try {
+      await window.api.tiendaGuardarCred({ apiUrl: tiendaUrl, apiSecret: tiendaSecreto });
+      setTiendaSecreto("");
+      setTiendaEstado({ configurada: true, apiUrl: tiendaUrl.trim() });
+      setTiendaMsg({ ok: true, texto: "Guardado ✓ — se prueba solo la próxima vez que factures un pedido web." });
+    } catch (e) { setTiendaMsg({ ok: false, texto: e?.message || String(e) }); }
+    finally { setTiendaGuardando(false); }
+  }
 
   async function guardarCred() {
     if (!credEmail.trim() || !credPass) { setCredMsg({ ok: false, texto: "Completá email y contraseña." }); return; }
@@ -165,6 +187,37 @@ export default function Opciones() {
         <div className="opt-folder">
           <button onClick={guardarCred} disabled={credProbando}>{credProbando ? "Verificando…" : "Probar y guardar"}</button>
           {credMsg && <small className={credMsg.ok ? "good" : "bad"} style={{ alignSelf: "center" }}>{credMsg.texto}</small>}
+        </div>
+      </section>
+
+      <section className="opt">
+        <div className="opt-row">
+          <div>
+            <div className="opt-title">Tienda online (avisar factura por mail)</div>
+            <div className="opt-desc">
+              Al facturar un pedido web, además de subir el link, se le avisa a la tienda para que le mande el mail al cliente sola — sin entrar a tildar el casillero a mano.
+              {tiendaEstado && (
+                <> {tiendaEstado.configurada
+                  ? <b style={{ color: "var(--ok)" }}> · Configurada ({tiendaEstado.apiUrl}).</b>
+                  : <b style={{ color: "var(--err)" }}> · Sin configurar en esta PC (el link se sube igual, pero sin mail automático).</b>}</>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <label className="fld" style={{ maxWidth: 420 }}>
+          <span>URL de la tienda</span>
+          <input value={tiendaUrl} autoComplete="off"
+            onChange={(e) => setTiendaUrl(e.target.value)} placeholder="https://www.opticacarballo.com.ar" />
+        </label>
+        <label className="fld" style={{ maxWidth: 420 }}>
+          <span>Secreto (FACTURADOR_API_SECRET de la tienda)</span>
+          <input type="password" value={tiendaSecreto} autoComplete="new-password"
+            onChange={(e) => setTiendaSecreto(e.target.value)} placeholder="••••••••" />
+        </label>
+        <div className="opt-folder">
+          <button onClick={guardarTienda} disabled={tiendaGuardando}>{tiendaGuardando ? "Guardando…" : "Guardar"}</button>
+          {tiendaMsg && <small className={tiendaMsg.ok ? "good" : "bad"} style={{ alignSelf: "center" }}>{tiendaMsg.texto}</small>}
         </div>
       </section>
 

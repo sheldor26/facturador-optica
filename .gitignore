@@ -26,6 +26,7 @@ release/
 config.json
 cloud-config.json
 cloud-cred.json
+tienda-cred.json
 __test_mejoras.mjs
 
 # Config local de Claude Code (por sesión/máquina, no compartir)

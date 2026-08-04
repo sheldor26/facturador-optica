@@ -14,6 +14,8 @@ export default function Facturas({ toast }) {
   const [compartir, setCompartir] = useState(null); // { f }
   const [cmedio, setCmedio] = useState("whatsapp");
   const [cdest, setCdest] = useState("");
+  const [link, setLink] = useState(null); // link público ya generado (medio "link")
+  const [generandoLink, setGenerandoLink] = useState(false);
   const emitiendoRef = useRef(false); // guard síncrono anti doble-emisión (NC/ND)
 
   async function cargar(query = "") {
@@ -60,6 +62,17 @@ export default function Facturas({ toast }) {
     finally { setWorking(false); }
   }
 
+  async function generarLink() {
+    setGenerandoLink(true);
+    try {
+      const url = await window.api.subirFacturaPublica(compartir.f.id);
+      setLink(url);
+      try { await navigator.clipboard.writeText(url); toast?.("Link copiado ✓ — pegalo en la tienda."); }
+      catch { toast?.("Se generó el link (no se pudo copiar solo, copialo de la caja)."); }
+    } catch (e) { toast?.(e?.message || String(e), "error"); }
+    finally { setGenerandoLink(false); }
+  }
+
   return (
     <>
       <header className="topbar"><h1>Facturas emitidas</h1></header>
@@ -92,7 +105,7 @@ export default function Facturas({ toast }) {
                 <td className="cae">{f.cae || "—"}</td>
                 <td className="acciones">
                   <button className="ghost mini" onClick={() => imprimir(f.id)}>Reimprimir</button>
-                  <button className="ghost mini" onClick={() => { setCompartir({ f }); setCmedio("whatsapp"); setCdest(""); }}>Compartir</button>
+                  <button className="ghost mini" onClick={() => { setCompartir({ f }); setCmedio("whatsapp"); setCdest(""); setLink(null); }}>Compartir</button>
                   {f.clase === "FACTURA" && (
                     <>
                       <button className="ghost mini" onClick={() => setNota({ clase: "NC", f })}>N. Crédito</button>
@@ -125,16 +138,44 @@ export default function Facturas({ toast }) {
           <div className="medio-tabs">
             <button className={cmedio === "whatsapp" ? "" : "ghost"} onClick={() => setCmedio("whatsapp")}>WhatsApp</button>
             <button className={cmedio === "email" ? "" : "ghost"} onClick={() => setCmedio("email")}>Email</button>
+            <button className={cmedio === "link" ? "" : "ghost"} onClick={() => setCmedio("link")}>Link público</button>
           </div>
-          <label className="fld" style={{ marginTop: 14 }}>
-            <span>{cmedio === "whatsapp" ? "Teléfono (con cód. de país, ej. 5493756...)" : "Email del cliente"}</span>
-            <input value={cdest} onChange={(e) => setCdest(e.target.value)} placeholder={cmedio === "whatsapp" ? "5493756123456" : "cliente@correo.com"} />
-          </label>
-          <p className="hint-share">Se abre {cmedio === "whatsapp" ? "WhatsApp" : "el correo"} con el mensaje y se muestra el PDF para que lo adjuntes con un arrastre.</p>
-          <div className="modal-btns">
-            <button className="ghost" onClick={() => setCompartir(null)} disabled={working}>Cancelar</button>
-            <button onClick={confirmarCompartir} disabled={working}>{working ? "Abriendo…" : "Compartir"}</button>
-          </div>
+
+          {cmedio === "link" ? (
+            <>
+              <p className="hint-share" style={{ marginTop: 14 }}>
+                Sube el PDF a un link público (para pegar en "Ver factura" de la tienda online, o mandarlo por donde quieras).
+              </p>
+              {link ? (
+                <label className="fld">
+                  <span>Link del comprobante</span>
+                  <div className="cuit-row">
+                    <input value={link} readOnly onFocus={(e) => e.target.select()} />
+                    <button className="ghost" onClick={() => navigator.clipboard.writeText(link).then(() => toast?.("Copiado ✓"))}>Copiar</button>
+                  </div>
+                </label>
+              ) : (
+                <button className="emit-btn" style={{ marginTop: 10 }} disabled={generandoLink} onClick={generarLink}>
+                  {generandoLink ? "Subiendo…" : "Generar y copiar link"}
+                </button>
+              )}
+              <div className="modal-btns">
+                <button className="ghost" onClick={() => setCompartir(null)}>Cerrar</button>
+              </div>
+            </>
+          ) : (
+            <>
+              <label className="fld" style={{ marginTop: 14 }}>
+                <span>{cmedio === "whatsapp" ? "Teléfono (con cód. de país, ej. 5493756...)" : "Email del cliente"}</span>
+                <input value={cdest} onChange={(e) => setCdest(e.target.value)} placeholder={cmedio === "whatsapp" ? "5493756123456" : "cliente@correo.com"} />
+              </label>
+              <p className="hint-share">Se abre {cmedio === "whatsapp" ? "WhatsApp" : "el correo"} con el mensaje y se muestra el PDF para que lo adjuntes con un arrastre.</p>
+              <div className="modal-btns">
+                <button className="ghost" onClick={() => setCompartir(null)} disabled={working}>Cancelar</button>
+                <button onClick={confirmarCompartir} disabled={working}>{working ? "Abriendo…" : "Compartir"}</button>
+              </div>
+            </>
+          )}
         </div></div>
       )}
     </>

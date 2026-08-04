@@ -27,12 +27,18 @@ export function setDataDir(dir) {
   fs.mkdirSync(dir, { recursive: true });
   setTokensDir(dp(".tokens"));
   cloud.setCredPath(dp("cloud-cred.json")); // credenciales de la nube por PC (no viajan en el instalador)
+  cloud.setTiendaCredPath(dp("tienda-cred.json")); // URL + secreto de la tienda online, por PC
 }
 
 // ---- Credenciales de la nube (por PC) ----
 export function cloudEstadoCredenciales() { return cloud.estadoCredenciales(); }
 export function cloudGuardarCredenciales(c) { cloud.guardarCredenciales(c); }
 export function cloudProbarCredenciales(c) { return cloud.probarCredenciales(c); }
+
+// ---- Tienda online: avisar por mail al facturar un pedido web (por PC) ----
+export function tiendaEstadoCred() { return cloud.estadoTiendaCred(); }
+export function tiendaGuardarCred(c) { cloud.guardarTiendaCred(c); }
+export function tiendaNotificarFactura(orderId, invoiceUrl) { return cloud.notificarFacturaTienda(orderId, invoiceUrl); }
 
 /** ¿Ya están cargados certificado, clave y datos del emisor? */
 export function estaConfigurado() {

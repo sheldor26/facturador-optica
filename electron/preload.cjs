@@ -35,12 +35,15 @@ contextBridge.exposeInMainWorld("api", {
   reporteDatos: (filtro) => ipcRenderer.invoke("reporte:datos", filtro),
   reporteExportar: (filtro) => ipcRenderer.invoke("reporte:exportar", filtro),
   compartirFactura: (opts) => ipcRenderer.invoke("factura:compartir", opts),
+  subirFacturaPublica: (id) => ipcRenderer.invoke("factura:subirPublico", id),
   getConfig: () => ipcRenderer.invoke("config:get"),
   setConfig: (patch) => ipcRenderer.invoke("config:set", patch),
   // Credenciales de la nube (por PC)
   cloudEstadoCred: () => ipcRenderer.invoke("cloud:estadoCred"),
   cloudProbarCred: (c) => ipcRenderer.invoke("cloud:probarCred", c),
   cloudGuardarCred: (c) => ipcRenderer.invoke("cloud:guardarCred", c),
+  tiendaEstadoCred: () => ipcRenderer.invoke("tienda:estadoCred"),
+  tiendaGuardarCred: (c) => ipcRenderer.invoke("tienda:guardarCred", c),
   listarImpresoras: () => ipcRenderer.invoke("impresoras:listar"),
   elegirCarpeta: () => ipcRenderer.invoke("dialog:elegirCarpeta"),
   // ---- Sancor ----

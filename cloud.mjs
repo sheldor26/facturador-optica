@@ -45,6 +45,50 @@ export async function probarCredenciales({ email, password }) {
   } catch (e) { return { ok: false, error: e?.message || String(e) }; }
 }
 
+// ---- Tienda online (Óptica Carballo, Next.js): avisar por mail al cliente ----
+// URL + secreto POR COMPUTADORA (mismo patrón que las credenciales de la nube):
+// se guardan en la carpeta de datos del usuario, no viajan en el instalador.
+let TIENDA_CRED_PATH = null;
+export function setTiendaCredPath(p) { TIENDA_CRED_PATH = p; }
+function loadTiendaCred() {
+  try {
+    const c = JSON.parse(fs.readFileSync(TIENDA_CRED_PATH, "utf-8"));
+    if (c && c.apiUrl && c.apiSecret) return c;
+  } catch { /* no hay archivo */ }
+  return null;
+}
+export function estadoTiendaCred() {
+  const c = loadTiendaCred();
+  return { configurada: !!c, apiUrl: c?.apiUrl || "" };
+}
+export function guardarTiendaCred({ apiUrl, apiSecret }) {
+  if (!TIENDA_CRED_PATH) throw new Error("Ruta de credenciales no definida");
+  const url = String(apiUrl || "").trim().replace(/\/$/, "");
+  fs.writeFileSync(TIENDA_CRED_PATH, JSON.stringify({ apiUrl: url, apiSecret: String(apiSecret || "") }, null, 2));
+}
+
+/**
+ * Avisa a la tienda online que la factura de un pedido está lista: la tienda
+ * guarda el link en `orders.invoice_url` y le manda el mail al cliente (mismo
+ * texto/remitente que usa hoy el panel admin — un solo lugar dueño del mail).
+ * Si la tienda no está configurada en esta PC, o no responde, devuelve error
+ * (el caller decide el fallback: al menos dejar el link cargado sin mail).
+ */
+export async function notificarFacturaTienda(orderId, invoiceUrl) {
+  const cred = loadTiendaCred();
+  if (!cred) return { ok: false, error: "Tienda online no configurada en esta PC" };
+  try {
+    const r = await fetch(`${cred.apiUrl}/api/internal/orders/${encodeURIComponent(orderId)}/invoice`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${cred.apiSecret}` },
+      body: JSON.stringify({ invoiceUrl }),
+    });
+    const data = await r.json().catch(() => null);
+    if (!r.ok || !data?.ok) return { ok: false, error: data?.error || `HTTP ${r.status}` };
+    return { ok: true, emailed: !!data.emailed, emailError: data.emailError };
+  } catch (e) { return { ok: false, error: e?.message || String(e) }; }
+}
+
 let token = null;
 
 async function signIn() {
@@ -229,4 +273,23 @@ export async function bajarArchivo(objectPath) {
     if (!r.ok) return null;
     return Buffer.from(await r.arrayBuffer());
   } catch { return null; }
+}
+
+// ---- Storage: bucket "comprobantes" (público) ----
+// PDF de facturas/NC/ND para compartir con el cliente por link directo (ej. "Ver factura"
+// en la tienda online). Separado del bucket "sancor" a propósito: ahí es todo privado.
+const BUCKET_COMPROBANTES = "comprobantes";
+
+/** Sube (o reemplaza) el PDF de un comprobante y devuelve el link público directo. */
+export async function subirComprobantePublico(nombreArchivo, buffer) {
+  if (!CONFIG) return { ok: false, error: "Nube no configurada" };
+  try {
+    const r = await storageFetch(`object/${BUCKET_COMPROBANTES}/${encPath(nombreArchivo)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/pdf", "x-upsert": "true" },
+      body: buffer,
+    });
+    if (!r.ok) return { ok: false, error: `${r.status} ${await r.text().catch(() => "")}`.trim() };
+    return { ok: true, url: `${CONFIG.url}/storage/v1/object/public/${BUCKET_COMPROBANTES}/${encPath(nombreArchivo)}` };
+  } catch (e) { return { ok: false, error: e?.message || String(e) }; }
 }

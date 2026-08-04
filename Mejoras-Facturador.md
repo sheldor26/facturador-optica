@@ -13,8 +13,22 @@ _Backlog vivo de UI/UX, diseño, performance, facilidad de carga de datos y feat
 | 2026-08-03 (#1) | Primera pasada completa: UI/UX, diseño, performance, carga de datos, features. |
 | 2026-08-03 (#2) | Catálogo en Emitir + fix de layout ya resueltos e implementados (ver #1). Segunda pasada con Codex+Agy enfocada en hallazgos NUEVOS: borrado de clientes sin confirmar, pedidos web "a ciegas", inconsistencias de impresión/feedback, punto de venta que escribe en cada tecla, presupuestos vencidos sin distinguir. |
 | 2026-08-03 (#3) | Nada implementado desde la corrida #2 (código sin cambios). Tercera pasada con foco ampliado al lado nativo (`electron/main.cjs`, `preload.cjs`, `Setup.jsx`) y accesibilidad de teclado transversal — las pantallas de renderer ya estaban bastante exprimidas. Salió una sección nueva: "Nativo / Electron". |
+| 2026-08-04 | Pedido de Juan (no salió del loop): al facturar un pedido web, poder pegar el link del PDF en el campo "Factura" de la tienda online sin subirlo a mano a Drive. **Implementado.** |
 
 ---
+
+## 🔗 Link público de comprobantes (2026-08-04)
+
+**Compartir → "Link público"** (Facturas emitidas): sube el PDF del comprobante a un bucket nuevo y público de Supabase Storage (`comprobantes`, separado del bucket privado `sancor`) y copia el link directo al portapapeles — listo para pegar en el campo "Factura" de la tienda online o mandarlo por donde sea.
+
+- `cloud.mjs`: `subirComprobantePublico()`, mismo patrón de auth que ya usa Sancor.
+- `electron/main.cjs`: IPC `factura:subirPublico` (genera el PDF en memoria con `htmlToPdfBuffer`, sin escribirlo a disco primero, y lo sube).
+- Supabase: bucket `comprobantes` (`public: true`) + políticas (`comprobantes_auth_all` para subir, lectura pública explícita) — mismo patrón que el bucket `products` ya usado por la tienda.
+- Verificado: el endpoint público responde sin pedir autenticación (400 "no encontrado" en vez de 401/403), y el resto del código sigue exactamente el patrón ya probado en producción de Sancor. La subida real con una factura real todavía no se probó de punta a punta (necesita la app empaquetada con credenciales reales) — probarla la primera vez que se use.
+
+**Extensión (2026-08-04): automático para Pedidos web.** Al facturar un pedido desde "Pedidos web", el Facturador ahora sube el PDF y escribe solo el link en `orders.invoice_url` (columna que ya usa la tienda online para "Ver factura") — no hace falta ir a Facturas emitidas ni copiar/pegar nada a mano. Es best-effort: si falla la subida, la factura igual queda emitida (lo importante) y el toast avisa que hay que subir el link a mano. Probado en el navegador con datos simulados, los dos mensajes de toast (con link / sin link) salen correctos.
+
+**Lo que NO se pudo automatizar:** tildar "Avisar al cliente por mail" y que se dispare el envío. Revisé Supabase (Edge Functions, triggers de `orders`) y no hay nada ahí — esa lógica vive en el código de la tienda online (Next.js, otro repo, sin acceso desde esta sesión). Para cerrar el círculo completo haría falta ver ese código (agregar un trigger/función que mande el mail cuando `invoice_url` cambia, o que la tienda exponga un endpoint que el Facturador pueda llamar).
 
 ## 🔥 Alto impacto / bajo-medio esfuerzo (arrancar por acá)
 

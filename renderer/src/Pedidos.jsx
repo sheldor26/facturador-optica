@@ -42,7 +42,11 @@ export default function Pedidos({ toast }) {
     try {
       const res = await window.api.facturarPedido(conf.id, receptorElegido);
       if (res.ok) {
-        toast?.("Pedido facturado: " + res.record.cae);
+        toast?.(!res.linkTienda
+          ? "Pedido facturado: " + res.record.cae + " (no se pudo subir el link a la tienda, se puede subir a mano desde Facturas emitidas)."
+          : res.mailEnviado
+            ? "Pedido facturado: " + res.record.cae + " — mail con la factura ya enviado al cliente."
+            : "Pedido facturado: " + res.record.cae + " — link cargado en la tienda, pero el mail no salió solo (revisá Opciones o mandalo a mano).");
         window.api.imprimirFactura(res.id, ["ORIGINAL", "DUPLICADO"]);
         setConf(null);
         await cargar();
