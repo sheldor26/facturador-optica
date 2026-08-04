@@ -50,7 +50,10 @@ export default function App() {
   const [nube, setNube] = useState("...");
   const [sync, setSync] = useState(null);
   const [arca, setArca] = useState("...");
+  const [version, setVersion] = useState("");
   const [tema, setTema] = useState(() => localStorage.getItem("tema") || "claro");
+
+  useEffect(() => { window.api.version?.().then(setVersion).catch(() => {}); }, []);
 
   useEffect(() => {
     document.documentElement.dataset.theme = tema === "oscuro" ? "dark" : "";
@@ -132,6 +135,7 @@ export default function App() {
               : nube === "off" ? "Sin conexión — reintenta solo" : "Conectando…"}
           </div>
           <div className="side-name">{emisor?.nombreFantasia || ""}</div>
+          {version && <div className="side-version" title="Versión instalada">v{version}</div>}
           <button className="tema-btn" onClick={() => setTema(tema === "oscuro" ? "claro" : "oscuro")}>
             {tema === "oscuro" ? <Sol /> : <Luna />}{tema === "oscuro" ? "Modo claro" : "Modo oscuro"}
           </button>

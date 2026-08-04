@@ -141,6 +141,7 @@ async function imprimirOAbrir(eng, html, outPath) {
 ipcMain.handle("arca:serverStatus", async () => (await engine()).serverStatus());
 ipcMain.handle("arca:proximoNumero", async (_e, ptoVta, cbteTipo) => (await engine()).proximoNumero(ptoVta, cbteTipo));
 ipcMain.handle("app:emisor", async () => (await engine()).getEmisor());
+ipcMain.handle("app:version", () => app.getVersion());
 ipcMain.handle("padron:consultar", async (_e, cuit) => (await engine()).consultarPadron(cuit));
 ipcMain.handle("factura:emitir", async (_e, opts) => (await engine()).emitir(opts));
 ipcMain.handle("factura:nota", async (_e, opts) => (await engine()).emitirNota(opts));

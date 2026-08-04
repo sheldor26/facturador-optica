@@ -5,6 +5,7 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("api", {
   emisor: () => ipcRenderer.invoke("app:emisor"),
+  version: () => ipcRenderer.invoke("app:version"),
   setupEstado: () => ipcRenderer.invoke("setup:estado"),
   setupElegirArchivo: (tipo) => ipcRenderer.invoke("setup:elegirArchivo", tipo),
   setupGuardar: (data) => ipcRenderer.invoke("setup:guardar", data),
