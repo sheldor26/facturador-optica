@@ -4,6 +4,16 @@ _Fecha: agosto 2026. Revisión de los cambios sin commitear (Presupuestos, módu
 
 ---
 
+## 🐞 Reportado por Juan en producción (no salió en las auditorías)
+
+### Facturar un pedido web podía salir con el comprador completamente en blanco — Resuelto (2026-08-03)
+
+Juan facturó un pedido desde "Pedidos web" y la factura salió a Consumidor Final **sin ningún dato del comprador, ni el nombre**. Causa real (`engine.mjs`, `detallePedido`/`facturarPedido`): si el pedido no tenía DNI cargado, el DNI no matcheaba a nadie en el padrón de ARCA, o la consulta al padrón fallaba (ARCA caída, timeout), el comprador quedaba con el objeto vacío por defecto (`nombre: ""`) **sin nunca caer al nombre que la persona ya había puesto al comprar en la web** (`order.customer_name`, el mismo dato que se muestra en la lista de "Pedidos web"). Bug preexistente al código anterior a esta sesión, no algo introducido por el fix de "pedidos a ciegas" del mismo día — solo quedó más visible.
+
+**Arreglo:** nueva `resolverReceptorPedido()`, compartida por `detallePedido` y `facturarPedido`: solo usa el dato del padrón cuando matchea a **una sola** persona; en cualquier otro caso (sin DNI, sin match, error de consulta) cae al nombre + DNI que puso el comprador en la web, nunca a un objeto vacío. Verificado con un test aislado (sin depender de ARCA/Supabase reales) que cubre los 5 casos: sin DNI, sin match, ARCA caída, un match, y varios matches — en los tres primeros antes se perdía el nombre y ahora no.
+
+---
+
 ## ✅ De la auditoría anterior: qué se resolvió y qué no
 
 | Punto (julio 2026) | Estado ahora |
@@ -13,7 +23,7 @@ _Fecha: agosto 2026. Revisión de los cambios sin commitear (Presupuestos, módu
 | #3 IVA fijo 21% (Sancor GRAV) | **Descartado como bug.** Confirmado con Juan: es intencional, así se factura siempre. Ver sección "Revisado y descartado". |
 | #4 Notas de crédito/débito al 21% | **No resuelto, y aparecieron dos problemas nuevos** sobre el mismo código (ver Crítico #2). |
 | #5 Sin backups de `datos.json` | **Resuelto** (backup diario, últimas 7 copias en `backups/`), con un efecto secundario nuevo (ver Importante #3). |
-| #6 Fallos de sync invisibles | **Resuelto a medias**: ahora hay indicador, pero puede mentir (ver Importante #2). |
+| #6 Fallos de sync invisibles | **Resuelto (2026-08-03)**: indicador + ya no miente (ver Importante #2, resuelto abajo). |
 | #7 Path traversal en descarga de Sancor | **Resuelto** (`path.basename` + chequeo de que la ruta quede dentro de la carpeta). Pero el mismo patrón de riesgo quedó sin aplicar en la *subida* de fotos (ver Importante #5). |
 | #8 Navegación por teclado rota | **Resuelto** en el menú lateral (roles, `tabIndex`, `onKeyDown`). Los modales de Emitir/Rápida/Sancor ya cierran con Escape; los de Presupuestos, no. |
 | Merge de clientes pisa sin mirar fecha | **Resuelto** (last-write-wins por `actualizado`/`actualizado_en`). |
@@ -49,7 +59,7 @@ Se agregó el mismo guard síncrono (`useRef` que corta clics repetidos antes de
 
 **4. `cloud-cred.json` guarda la contraseña en texto plano en disco.** Mucho mejor que viajar en el instalador público, pero sigue siendo un archivo legible por cualquier proceso con acceso al usuario del sistema. → `safeStorage` de Electron (cifra con el Keychain/DPAPI del SO).
 
-**5. El indicador de sync puede mentir.** En `sincronizarNube()`, `subidas++` se incrementa aunque `pushFactura/pushCliente/pushPresupuesto` falle (el error se traga con `.catch(() => {})`). El cartelito "Nube al día · subió N" puede mostrar éxito cuando en realidad no subió nada. → Contar solo los pushes que realmente resuelven `ok`.
+**5. ~~El indicador de sync puede mentir~~ — Resuelto (2026-08-03).** `pushCliente`/`pushFactura`/`pushPresupuesto` (`cloud.mjs`) ahora revisan `r.ok` y tiran error si la nube rechaza el push (antes nunca fallaban por status HTTP, solo por caída de red). `sincronizarNube()` cuenta `subidas`/`fallidas` reales en vez de incrementar siempre. El indicador de la barra lateral muestra "N sin subir" con punto ámbar cuando algo no subió, en vez de decir "Nube al día" igual. Probado en el navegador: con fallas simuladas se ve el punto ámbar y el conteo correcto; sin fallas vuelve a verde "Nube al día".
 
 **6. `backups/` no está en `.gitignore`.** El backup diario de `datos.json` (con CUITs, nombres, facturas reales) se guarda en `backups/`, que hoy aparece como carpeta sin trackear — un `git add -A` sin mirar la incluiría en el repo. → Agregar `backups/` al `.gitignore`, en la misma línea que ya protege `datos.json`.
 
@@ -89,7 +99,7 @@ Se agregó el mismo guard síncrono (`useRef` que corta clics repetidos antes de
 3. `backups/` al `.gitignore` (Importante #6) — un minuto, evita un problema serio si se comitea sin querer.
 
 **Este mes:**
-4. Corregir el indicador de sync para que no cuente pushes fallidos (Importante #5).
+4. ~~Corregir el indicador de sync para que no cuente pushes fallidos~~ ✅ hecho (2026-08-03).
 5. Sacar el fallback de credenciales viejas + evaluar `safeStorage` (Importante #3 y #4).
 6. `path.basename` en la subida de fotos de Sancor (Importante #7) y tombstone para presupuestos borrados (Importante #8).
 
@@ -97,4 +107,4 @@ Se agregó el mismo guard síncrono (`useRef` que corta clics repetidos antes de
 
 ---
 
-_Lo que sigue bien: Electron endurecido, numeración fiscal delegada a ARCA, backup diario, indicador de sync (aunque haya que ajustarle la precisión), y la traducción de errores técnicos a lenguaje claro (`errores.js`) ahora cubre más pantallas que antes._
+_Lo que sigue bien: Electron endurecido, numeración fiscal delegada a ARCA, backup diario, indicador de sync ya confiable, y la traducción de errores técnicos a lenguaje claro (`errores.js`) ahora cubre más pantallas que antes._

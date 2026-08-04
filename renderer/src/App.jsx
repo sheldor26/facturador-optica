@@ -125,10 +125,10 @@ export default function App() {
         </nav>
         <div className="side-foot">
           <div className="side-nube"><span className={`ndot ${arca}`} />{arca === "ok" ? "ARCA en línea" : arca === "off" ? "ARCA sin conexión" : "ARCA…"}</div>
-          <div className="side-nube" onClick={sincronizar} style={{ cursor: "pointer" }} title="Sincronizar ahora">
-            <span className={`ndot ${nube}`} />
+          <div className="side-nube" onClick={sincronizar} style={{ cursor: "pointer" }} title={sync?.fallidas ? `${sync.fallidas} sin poder subir — se reintenta solo` : "Sincronizar ahora"}>
+            <span className={`ndot ${nube === "ok" && sync?.fallidas ? "warn" : nube}`} />
             {nube === "ok"
-              ? <>Nube al día{sync?.subidas ? ` · subió ${sync.subidas}` : ""}{sync?.at ? <small style={{ opacity: .6 }}> · {haceCuanto(sync.at)}</small> : ""}</>
+              ? <>{sync?.fallidas ? `${sync.fallidas} sin subir` : "Nube al día"}{sync?.subidas ? ` · subió ${sync.subidas}` : ""}{sync?.at ? <small style={{ opacity: .6 }}> · {haceCuanto(sync.at)}</small> : ""}</>
               : nube === "off" ? "Sin conexión — reintenta solo" : "Conectando…"}
           </div>
           <div className="side-name">{emisor?.nombreFantasia || ""}</div>

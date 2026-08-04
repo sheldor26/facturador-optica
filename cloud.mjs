@@ -86,11 +86,12 @@ export async function fetchFacturas() {
 export async function pushCliente(c) {
   const cuit = String(c.cuit || "").replace(/\D/g, "");
   if (!cuit) return;
-  await req("facturador_clientes", {
+  const r = await req("facturador_clientes", {
     method: "POST",
     headers: { Prefer: "resolution=merge-duplicates" },
     body: JSON.stringify({ cuit, nombre: c.nombre || "", condicion: c.condicion || "", domicilio: c.domicilio || "", actualizado_en: new Date().toISOString() }),
   });
+  if (!r.ok) throw new Error(`pushCliente: la nube respondió ${r.status}`);
 }
 export async function deleteCliente(cuit) {
   const c = String(cuit || "").replace(/\D/g, "");
@@ -138,7 +139,7 @@ export async function saveToken(service, ticket, pc) {
 }
 
 export async function pushFactura(rec, pc) {
-  await req("facturador_facturas", {
+  const r = await req("facturador_facturas", {
     method: "POST",
     headers: { Prefer: "resolution=ignore-duplicates" },
     body: JSON.stringify({
@@ -148,6 +149,7 @@ export async function pushFactura(rec, pc) {
       qr: rec.qr || null, data: rec, pc: pc || null,
     }),
   });
+  if (!r.ok) throw new Error(`pushFactura: la nube respondió ${r.status}`);
 }
 
 // ---- Presupuestos (documentos no fiscales) ----
@@ -157,7 +159,7 @@ export async function fetchPresupuestos() {
 }
 /** Sube/actualiza un presupuesto (upsert por uid: refleja también cambios de estado). */
 export async function pushPresupuesto(rec, pc) {
-  await req("facturador_presupuestos", {
+  const r = await req("facturador_presupuestos", {
     method: "POST",
     headers: { Prefer: "resolution=merge-duplicates" },
     body: JSON.stringify({
@@ -168,6 +170,7 @@ export async function pushPresupuesto(rec, pc) {
       data: rec, pc: pc || null, actualizado_en: new Date().toISOString(),
     }),
   });
+  if (!r.ok) throw new Error(`pushPresupuesto: la nube respondió ${r.status}`);
 }
 export async function deletePresupuesto(uid) {
   if (uid) await req(`facturador_presupuestos?uid=eq.${encodeURIComponent(uid)}`, { method: "DELETE" });

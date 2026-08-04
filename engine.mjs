@@ -687,7 +687,7 @@ export { listarFacturas, getFactura, contarFacturas, listarClientes };
 export function guardarCliente(c) { dbGuardarCliente(c); cloud.pushCliente(c).catch(() => {}); }
 export function eliminarCliente(cuit) { dbEliminarCliente(cuit); cloud.deleteCliente(cuit).catch(() => {}); }
 
-let _ultimaSync = null; // { at, ok, offline, subidas, bajadas, error }
+let _ultimaSync = null; // { at, ok, offline, subidas, fallidas, bajadas, error }
 /** Último resultado de sincronización (para el indicador de la interfaz). */
 export function estadoSync() { return _ultimaSync; }
 
@@ -700,24 +700,29 @@ export async function sincronizarNube() {
     const bajFac = mergeFacturas(cloudFac) || 0;
     mergeClientes(cloudCli);
     const bajPre = mergePresupuestos(cloudPre) || 0;
-    let subidas = 0;
+    // Solo cuenta como "subida" la que realmente resolvió ok — antes se contaba igual
+    // aunque la nube la rechazara o fallara la conexión, y el indicador mentía.
+    let subidas = 0, fallidas = 0;
+    async function push(fn) {
+      try { await fn(); subidas++; } catch { fallidas++; }
+    }
     const keys = new Set(cloudFac.map((r) => `${r.clase}-${r.tipo}-${r.pto_vta}-${r.numero}`));
     for (const f of todasFacturas()) {
-      if (!keys.has(`${f.clase}-${f.tipo}-${f.ptoVta}-${f.numero}`)) { await cloud.pushFactura(f.record, PC).catch(() => {}); subidas++; }
+      if (!keys.has(`${f.clase}-${f.tipo}-${f.ptoVta}-${f.numero}`)) await push(() => cloud.pushFactura(f.record, PC));
     }
     const cuits = new Set(cloudCli.map((c) => String(c.cuit)));
     for (const c of listarClientes()) {
-      if (!cuits.has(c.cuit)) { await cloud.pushCliente(c).catch(() => {}); subidas++; }
+      if (!cuits.has(c.cuit)) await push(() => cloud.pushCliente(c));
     }
     // Presupuestos: subir los locales que la nube no tenga (o que cambiaron de estado).
     const preCloud = new Map(cloudPre.map((r) => [r.uid, r]));
     for (const p of todosPresupuestos()) {
       const enNube = preCloud.get(p.uid);
       if (!enNube || (p.estado === "facturado" && enNube.estado !== "facturado")) {
-        await cloud.pushPresupuesto(p.record, PC).catch(() => {}); subidas++;
+        await push(() => cloud.pushPresupuesto(p.record, PC));
       }
     }
-    res = { ok: true, subidas, bajadas: bajFac + bajPre };
+    res = { ok: true, subidas, fallidas, bajadas: bajFac + bajPre };
     _ultimaSync = { at: Date.now(), ...res };
     return res;
   } catch (e) { res = { ok: false, error: e.message }; _ultimaSync = { at: Date.now(), ...res }; return res; }
@@ -757,6 +762,34 @@ function lineasDePedido(order, items) {
 }
 
 /**
+ * Resuelve el comprador de un pedido: por padrón si el DNI matchea a una sola persona, o
+ * devuelve `opciones` para elegir si matchea a varias. Si no hay DNI cargado, no matchea a
+ * nadie, o falla la consulta a ARCA (offline, etc.), NUNCA deja el comprador en blanco: cae
+ * a los datos que la persona ya puso al comprar en la web (nombre + DNI), como Consumidor
+ * Final identificado — antes en cualquiera de esos casos la factura salía sin nombre ni nada.
+ */
+async function resolverReceptorPedido(order) {
+  const fallback = {
+    receptorCond: "Consumidor Final",
+    docNro: String(order.customer_dni || "").replace(/\D/g, ""),
+    nombre: order.customer_name || "",
+    domicilio: "",
+  };
+  if (!order.customer_dni) return { receptor: fallback, opciones: null };
+  try {
+    const { personas } = await consultarPadron(order.customer_dni);
+    if (personas.length === 1) {
+      const p = personas[0];
+      return { receptor: { receptorCond: p.condicion, docNro: String(p.cuit), nombre: p.nombre, domicilio: p.domicilio }, opciones: null };
+    }
+    if (personas.length > 1) return { receptor: fallback, opciones: personas }; // que elija quien factura
+    return { receptor: fallback, opciones: null }; // DNI válido pero sin match en el padrón
+  } catch {
+    return { receptor: fallback, opciones: null }; // ARCA caída o lo que sea: no se pierde el nombre
+  }
+}
+
+/**
  * Detalle de un pedido antes de facturarlo: los ítems tal cual van a quedar en la factura,
  * y el comprador resuelto por padrón (o la lista de personas para elegir, si el DNI da varias).
  */
@@ -764,19 +797,7 @@ export async function detallePedido(orderId) {
   const { order, items } = await cloud.getPedidoConItems(orderId);
   if (!order) throw new Error("Pedido no encontrado.");
   const lineas = lineasDePedido(order, items);
-  let receptor = { receptorCond: "Consumidor Final", docNro: "", nombre: "", domicilio: "" };
-  let opciones = null;
-  if (order.customer_dni) {
-    try {
-      const { personas } = await consultarPadron(order.customer_dni);
-      if (personas.length === 1) {
-        const p = personas[0];
-        receptor = { receptorCond: p.condicion, docNro: String(p.cuit), nombre: p.nombre, domicilio: p.domicilio };
-      } else if (personas.length > 1) {
-        opciones = personas; // varias personas con el mismo DNI: que elija quien factura
-      }
-    } catch { /* sin padrón → queda Consumidor Final (B) */ }
-  }
+  const { receptor, opciones } = await resolverReceptorPedido(order);
   return { items: lineas, receptor, opciones, total: (order.total_cents || 0) / 100 };
 }
 
@@ -793,15 +814,7 @@ export async function facturarPedido(orderId, receptor) {
   if (total <= 0) throw new Error("El pedido no tiene importe.");
 
   const lineas = lineasDePedido(order, items);
-
-  let receptorFinal = receptor || { receptorCond: "Consumidor Final", docNro: "", nombre: "", domicilio: "" };
-  if (!receptor && order.customer_dni) {
-    try {
-      const { personas } = await consultarPadron(order.customer_dni);
-      const p = personas[0];
-      if (p) receptorFinal = { receptorCond: p.condicion, docNro: String(p.cuit), nombre: p.nombre, domicilio: p.domicilio };
-    } catch { /* sin padrón → queda Consumidor Final (B) */ }
-  }
+  const receptorFinal = receptor || (await resolverReceptorPedido(order)).receptor;
 
   const res = await emitir({ ...receptorFinal, condVenta: "Otra", ptoVta: getPtoVta(), items: lineas });
   if (res.ok) {

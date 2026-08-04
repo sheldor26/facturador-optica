@@ -96,6 +96,7 @@ h1, h2, h3 { letter-spacing: -.015em; }
 .side-nube .ndot { width: 8px; height: 8px; border-radius: 50%; background: #6b7689; transition: background .2s; }
 .side-nube .ndot.ok { background: #34d399; box-shadow: 0 0 8px #34d39988; }
 .side-nube .ndot.off { background: #f87171; box-shadow: 0 0 8px #f8717188; }
+.side-nube .ndot.warn { background: #fbbf24; box-shadow: 0 0 8px #fbbf2488; }
 .side-name { font-size: 11px; color: #7d8bab; margin-top: 8px; letter-spacing: .3px; }
 .tema-btn {
   width: 100%; margin-top: 12px; background: rgba(255,255,255,.06); color: #cdd6e8;
