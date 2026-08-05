@@ -120,7 +120,7 @@ export async function nubeDisponible() {
 }
 
 export async function fetchClientes() {
-  const r = await req("facturador_clientes?select=cuit,nombre,condicion,domicilio,actualizado_en");
+  const r = await req("facturador_clientes?select=cuit,nombre,condicion,domicilio,actualizado_en,eliminado_en");
   return r.ok ? r.json() : [];
 }
 export async function fetchFacturas() {
@@ -133,13 +133,21 @@ export async function pushCliente(c) {
   const r = await req("facturador_clientes", {
     method: "POST",
     headers: { Prefer: "resolution=merge-duplicates" },
-    body: JSON.stringify({ cuit, nombre: c.nombre || "", condicion: c.condicion || "", domicilio: c.domicilio || "", actualizado_en: new Date().toISOString() }),
+    body: JSON.stringify({ cuit, nombre: c.nombre || "", condicion: c.condicion || "", domicilio: c.domicilio || "", actualizado_en: new Date().toISOString(), eliminado_en: null }),
   });
   if (!r.ok) throw new Error(`pushCliente: la nube respondió ${r.status}`);
 }
+/** Borrado lógico: marca `eliminado_en` en vez de borrar la fila, para que otra PC con
+ * una copia vieja sin sincronizar no la vuelva a subir y la "resucite" (ver mergeClientes). */
 export async function deleteCliente(cuit) {
   const c = String(cuit || "").replace(/\D/g, "");
-  if (c) await req(`facturador_clientes?cuit=eq.${c}`, { method: "DELETE" });
+  if (!c) return;
+  const r = await req(`facturador_clientes?cuit=eq.${c}`, {
+    method: "PATCH",
+    headers: { Prefer: "return=minimal" },
+    body: JSON.stringify({ eliminado_en: new Date().toISOString() }),
+  });
+  if (!r.ok) throw new Error(`deleteCliente: la nube respondió ${r.status}`);
 }
 // ---- Pedidos de la tienda web ----
 export async function fetchPedidos() {
@@ -211,13 +219,21 @@ export async function pushPresupuesto(rec, pc) {
       receptor_nombre: rec.receptor?.nombre || "Consumidor Final",
       total: rec.importes?.total ?? 0, neto: rec.importes?.neto ?? null, iva: rec.importes?.iva ?? null,
       estado: rec.estado || "vigente", factura_id: rec.facturaId || null,
-      data: rec, pc: pc || null, actualizado_en: new Date().toISOString(),
+      data: rec, pc: pc || null, actualizado_en: new Date().toISOString(), eliminado_en: null,
     }),
   });
   if (!r.ok) throw new Error(`pushPresupuesto: la nube respondió ${r.status}`);
 }
+/** Borrado lógico: marca `eliminado_en` en vez de borrar la fila (mismo motivo que
+ * `deleteCliente`: para que otra PC con una copia vieja no la resucite). */
 export async function deletePresupuesto(uid) {
-  if (uid) await req(`facturador_presupuestos?uid=eq.${encodeURIComponent(uid)}`, { method: "DELETE" });
+  if (!uid) return;
+  const r = await req(`facturador_presupuestos?uid=eq.${encodeURIComponent(uid)}`, {
+    method: "PATCH",
+    headers: { Prefer: "return=minimal" },
+    body: JSON.stringify({ eliminado_en: new Date().toISOString() }),
+  });
+  if (!r.ok) throw new Error(`deletePresupuesto: la nube respondió ${r.status}`);
 }
 
 // ---- Storage (archivos): bucket "sancor" ----

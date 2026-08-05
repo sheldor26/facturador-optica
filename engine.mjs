@@ -58,8 +58,13 @@ export function guardarSetup({ certPem, keyPem, emisor, logoNombre, logoBase64 }
   fs.writeFileSync(dp("key.pem"), keyPem);
   const em = { ...emisor };
   if (logoBase64 && logoNombre) {
-    fs.writeFileSync(dp(logoNombre), Buffer.from(logoBase64, "base64"));
-    em.logo = logoNombre;
+    // path.basename por las dudas: el IPC expuesto acepta cualquier string, y sin esto un
+    // logoNombre con "../" escribiría fuera de la carpeta de datos.
+    const safeLogo = path.basename(String(logoNombre));
+    if (safeLogo && safeLogo !== "." && safeLogo !== "..") {
+      fs.writeFileSync(dp(safeLogo), Buffer.from(logoBase64, "base64"));
+      em.logo = safeLogo;
+    }
   }
   fs.writeFileSync(dp("emisor.json"), JSON.stringify(em, null, 2));
   _arca = null; // recrear el cliente con el cert nuevo

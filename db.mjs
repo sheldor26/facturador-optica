@@ -120,6 +120,12 @@ export function mergeClientes(arr) {
     const cuit = String(c.cuit).replace(/\D/g, "");
     if (!cuit) continue;
     const i = data.clientes.findIndex((x) => x.cuit === cuit);
+    // Borrado en otra PC (o en esta, antes de que sincronizara): sacarlo también acá.
+    // Sin esto, una PC con una copia vieja lo volvía a subir en su próximo sync y "resucitaba".
+    if (c.eliminado_en) {
+      if (i >= 0) { data.clientes.splice(i, 1); cambios++; }
+      continue;
+    }
     const tsNube = c.actualizado_en || c.actualizado || "";
     const reg = { cuit, nombre: c.nombre || "", condicion: c.condicion || "", domicilio: c.domicilio || "", actualizado: tsNube || new Date().toISOString() };
     if (i < 0) { data.clientes.push(reg); cambios++; continue; }
@@ -214,6 +220,12 @@ export function mergePresupuestos(arr) {
     const rec = row.data;
     if (!rec || !rec.uid) continue;
     const existente = data.presupuestos.find((p) => p.uid === rec.uid);
+    // Borrado en otra PC: sacarlo también acá en vez de dejarlo (o de volver a subirlo
+    // en el próximo sync porque localmente "no está borrado en la nube").
+    if (row.eliminado_en) {
+      if (existente) { data.presupuestos = data.presupuestos.filter((p) => p.uid !== rec.uid); cambios++; }
+      continue;
+    }
     if (existente) {
       // Si en la nube ya está facturado y local no, actualizamos el estado.
       if (rec.estado === "facturado" && existente.estado !== "facturado") {
