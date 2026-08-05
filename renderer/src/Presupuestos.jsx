@@ -123,16 +123,18 @@ function Lista({ toast, onNuevo }) {
                 <td><b>N° {String(p.numero).padStart(8, "0")}</b></td>
                 <td>{fmt(p.fecha)}{p.vencimiento ? <small style={{ display: "block", color: "var(--muted,#5a6473)" }}>vence {fmt(p.vencimiento)}</small> : null}</td>
                 <td>{p.receptor_nombre}</td>
-                <td className="r">{money(p.total)}</td>
+                <td className="r">{p.sinTotal ? <small style={{ color: "var(--muted,#5a6473)" }}>Lista de precios</small> : money(p.total)}</td>
                 <td>
                   {p.estado === "facturado"
                     ? <span className="pill online" title={p.factura_id || ""}>Facturado</span>
+                    : p.sinTotal
+                    ? <span className="pill" title="Los productos son alternativas, no se factura directo">Lista</span>
                     : <span className="pill">Vigente</span>}
                 </td>
                 <td className="acciones">
                   <button className="ghost mini" onClick={() => imprimir(p.id)}>Imprimir</button>
                   <button className="ghost mini" onClick={() => { setCompartir(p); setCmedio("whatsapp"); setCdest(""); }}>Compartir</button>
-                  {p.estado !== "facturado" && (
+                  {p.estado !== "facturado" && !p.sinTotal && (
                     <button className="ghost mini" onClick={() => setFacturar(p)}>Facturar</button>
                   )}
                   <button className="ghost mini" onClick={() => setBorrar(p)}>Eliminar</button>
@@ -170,7 +172,7 @@ function Lista({ toast, onNuevo }) {
       {compartir && (
         <div className="modal-bg"><div className="modal">
           <h2>Compartir presupuesto</h2>
-          <p><b>N° {String(compartir.numero).padStart(8, "0")}</b> · {money(compartir.total)}</p>
+          <p><b>N° {String(compartir.numero).padStart(8, "0")}</b> · {compartir.sinTotal ? "Lista de precios" : money(compartir.total)}</p>
           <div className="medio-tabs">
             <button className={cmedio === "whatsapp" ? "" : "ghost"} onClick={() => setCmedio("whatsapp")}>WhatsApp</button>
             <button className={cmedio === "email" ? "" : "ghost"} onClick={() => setCmedio("email")}>Email</button>
@@ -202,6 +204,7 @@ function Nuevo({ toast, onListo, onCancelar }) {
   const [validezDias, setValidezDias] = useState(7);
   const [observaciones, setObservaciones] = useState("");
   const [items, setItems] = useState([itemVacio()]);
+  const [sinTotal, setSinTotal] = useState(false);
   const [buscando, setBuscando] = useState(false);
   const [padronMsg, setPadronMsg] = useState(null);
   const [padronErr, setPadronErr] = useState(false);
@@ -291,6 +294,7 @@ function Nuevo({ toast, onListo, onCancelar }) {
         items: itemsAGuardar.map((it) => (it.nota
           ? { desc: it.desc, nota: true }
           : { desc: it.desc, cantidad: Number(it.cantidad), precioUnit: Number(it.precioUnit), unidad: it.unidad, descPct: Number(it.descPct) || 0 })),
+        sinTotal,
       });
       if (res.ok) {
         toast?.(`Presupuesto N° ${String(res.record.numero).padStart(8, "0")} creado.`);
@@ -383,11 +387,20 @@ function Nuevo({ toast, onListo, onCancelar }) {
             <button className="ghost" onClick={addNota}>+ Agregar nota (sin valor)</button>
           </div>
 
-          <div className="tot-box">
-            <div><span>Neto</span>{money(totales.neto)}</div>
-            <div><span>IVA 21%</span>{money(totales.iva)}</div>
-            <div className="tot-total"><span>Total</span>{money(totales.total)}</div>
-          </div>
+          <label className="chk-print">
+            <input type="checkbox" checked={sinTotal} onChange={(e) => setSinTotal(e.target.checked)} />
+            <span>Es una <b>lista de precios</b>: mostrar cada producto con su valor, sin sumar un total (para cuando el cliente todavía no eligió qué combinación quiere).</span>
+          </label>
+
+          {sinTotal ? (
+            <p className="hint-share">No se va a mostrar un total — el presupuesto va a listar cada producto con su precio, para que el cliente elija.</p>
+          ) : (
+            <div className="tot-box">
+              <div><span>Neto</span>{money(totales.neto)}</div>
+              <div><span>IVA 21%</span>{money(totales.iva)}</div>
+              <div className="tot-total"><span>Total</span>{money(totales.total)}</div>
+            </div>
+          )}
 
           {datosIncompletos && (
             <small className="bad" style={{ display: "block", marginBottom: 8 }}>
@@ -397,7 +410,7 @@ function Nuevo({ toast, onListo, onCancelar }) {
           <div className="modal-btns" style={{ marginTop: 4 }}>
             <button className="ghost" onClick={onCancelar} disabled={guardando}>Cancelar</button>
             <button className="emit-btn" disabled={!puedeGuardar || guardando} onClick={crear}>
-              {guardando ? "Generando…" : `Crear presupuesto — ${money(totales.total)}`}
+              {guardando ? "Generando…" : sinTotal ? "Crear lista de precios" : `Crear presupuesto — ${money(totales.total)}`}
             </button>
           </div>
         </section>

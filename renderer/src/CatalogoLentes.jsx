@@ -43,6 +43,25 @@ export default function CatalogoLentes({ items, setItems }) {
       return agregarConReemplazo(prev, nuevo);
     });
   }
+  // Cuántos pares de este producto ya están agregados (0, 1, o 2 = lejos + cerca).
+  function contarPar(catId) { return items.filter((it) => it._catId === catId && !it._slot).length; }
+  // Desdobla el par ya agregado en "— Lejos" + agrega uno nuevo "— Cerca" (mismo tratamiento, dos pares distintos).
+  function agregarParCerca(cat) {
+    setItems((prev) => {
+      const idx = prev.findIndex((it) => it._catId === cat.id && !it._slot);
+      if (idx === -1) return prev;
+      const copia = prev.slice();
+      copia[idx] = { ...copia[idx], desc: `${cat.label} — Lejos`, _dist: "lejos" };
+      copia.splice(idx + 1, 0, { _id: nuevoId(), _catId: cat.id, _dist: "cerca", desc: `${cat.label} — Cerca`, cantidad: 1, precioUnit: cat.precio, unidad: "Par", descPct: "", nota: false });
+      return copia;
+    });
+  }
+  // Vuelve a un solo par (quita el de cerca y le saca la etiqueta de distancia al que queda).
+  function quitarParCerca(cat) {
+    setItems((prev) => prev
+      .filter((it) => !(it._catId === cat.id && it._dist === "cerca"))
+      .map((it) => (it._catId === cat.id && it._dist === "lejos" ? { ...it, desc: cat.label, _dist: undefined } : it)));
+  }
   function toggleExtra(item) {
     setItems((prev) => {
       if (prev.some((it) => it._catId === item.id)) return prev.filter((it) => it._catId !== item.id);
@@ -80,13 +99,28 @@ export default function CatalogoLentes({ items, setItems }) {
         <p className="dash-empty">Todavía no cargaste el catálogo. Tocá "Editar catálogo" para agregar productos y precios.</p>
       ) : modoOjos === "igual" ? (
         <div className="cat-grid">
-          {catalogo.pares.map((c) => (
-            <label key={c.id} className="cat-check">
-              <input type="checkbox" checked={items.some((it) => it._catId === c.id && !it._slot)} onChange={() => toggleParIgual(c)} />
-              <span>{c.label}</span>
-              <b>{money(c.precio)}</b>
-            </label>
-          ))}
+          {catalogo.pares.map((c) => {
+            const n = contarPar(c.id);
+            return (
+              <div key={c.id} className="cat-check-wrap">
+                <label className="cat-check">
+                  <input type="checkbox" checked={n > 0} onChange={() => toggleParIgual(c)} />
+                  <span>{c.label}</span>
+                  <b>{money(c.precio)}</b>
+                </label>
+                {n === 1 && (
+                  <button type="button" className="cat-add-dist" onClick={() => agregarParCerca(c)}>
+                    + también necesita un par para cerca
+                  </button>
+                )}
+                {n === 2 && (
+                  <button type="button" className="cat-add-dist on" onClick={() => quitarParCerca(c)}>
+                    ✓ Lejos + Cerca agregados — quitar el de cerca
+                  </button>
+                )}
+              </div>
+            );
+          })}
         </div>
       ) : (
         <div className="cat-ojos">

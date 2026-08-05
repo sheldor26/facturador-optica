@@ -247,6 +247,7 @@ table.items input.num { width: 100%; text-align: right; font-variant-numeric: ta
 .ok-grid span { display: block; font-size: 11px; color: var(--muted); text-transform: uppercase; }
 .ok-grid b { font-size: 15px; color: var(--text-strong); }
 .ok-note { font-size: 12.5px; color: var(--muted); margin-bottom: 18px; }
+.ok-btns { display: flex; justify-content: center; gap: 10px; }
 
 /* ===== Opciones / Clientes / Rápida ===== */
 .opt { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 24px 26px; max-width: 720px; box-shadow: var(--shadow); }
@@ -317,6 +318,11 @@ table.items input.num { width: 100%; text-align: right; font-variant-numeric: ta
 .cat-check input { width: 16px; height: 16px; accent-color: var(--accent); flex-shrink: 0; }
 .cat-check span { flex: 1; font-size: 13.5px; }
 .cat-check b { font-size: 13px; color: var(--text-strong); white-space: nowrap; }
+.cat-check-wrap { border-radius: 8px; }
+.cat-add-dist { display: block; margin: -2px 0 4px 38px; padding: 0; border: none; background: none;
+  font-size: 11.5px; color: var(--accent); cursor: pointer; text-align: left; }
+.cat-add-dist:hover { text-decoration: underline; }
+.cat-add-dist.on { color: var(--ok); }
 .cat-ojos { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 4px; }
 @media (max-width: 720px) { .cat-grid, .cat-ojos { grid-template-columns: 1fr; } }
 .cat-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }

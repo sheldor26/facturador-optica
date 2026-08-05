@@ -59,7 +59,10 @@ export default function Rapida() {
             <div><span>Total</span><b>{money(r.importes.total)}</b></div>
           </div>
           <p className="ok-note">El PDF se generó y abrió automáticamente.</p>
-          <button onClick={reset}>Nueva factura rápida</button>
+          <div className="ok-btns">
+            <button className="ghost" onClick={() => window.api.verFactura(result.id).catch(() => {})}>Ver factura</button>
+            <button onClick={reset}>Nueva factura rápida</button>
+          </div>
         </div>
       </>
     );

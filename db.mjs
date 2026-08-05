@@ -100,6 +100,15 @@ export function getFactura(id) {
   return f ? { ...f, record: f.record } : null;
 }
 
+/** Guarda el token público (link "Ver factura") de un comprobante ya emitido. */
+export function setFacturaPublicToken(id, token) {
+  const f = data.facturas.find((x) => x.id === id);
+  if (!f) return null;
+  f.record.publicToken = token;
+  guardar();
+  return token;
+}
+
 export function contarFacturas() {
   return data.facturas.length;
 }
@@ -164,6 +173,7 @@ export function listarPresupuestos({ q = "", limit = 200 } = {}) {
     id: p.id, uid: p.uid, numero: p.numero, fecha: p.fecha, total: p.total,
     receptor_nombre: p.receptorNombre, estado: p.estado, factura_id: p.facturaId,
     vencimiento: p.record?.vencimiento || null,
+    sinTotal: !!p.record?.sinTotal,
   }));
 }
 

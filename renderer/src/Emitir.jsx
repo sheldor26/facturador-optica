@@ -181,7 +181,10 @@ export default function Emitir() {
                 ? `El comprobante se generó y se envió a la impresora (${result.nombreArchivo}).`
                 : `El comprobante se generó (${result.nombreArchivo}), pero no se pudo imprimir automáticamente. Se abrió el PDF para imprimirlo a mano. Revisá la impresora en Opciones.`}
           </p>
-          <button onClick={reset}>Emitir otra</button>
+          <div className="ok-btns">
+            <button className="ghost" onClick={() => window.api.verFactura(result.id).catch(() => {})}>Ver factura</button>
+            <button onClick={reset}>Emitir otra</button>
+          </div>
         </div>
       </>
     );

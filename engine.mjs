@@ -6,12 +6,14 @@ import "./arca-tls-fix.mjs"; // primero: arregla el TLS viejo de ARCA
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { randomUUID } from "node:crypto";
 import QRCode from "qrcode";
 import { Arca, CbteTipo, IvaTipo, DocTipo, CondicionIva, Concepto, Moneda } from "@ramiidv/arca-facturacion";
 import { attachTokenPersistence, setTokensDir, saveTicket } from "./ta-store.mjs";
 import { renderFacturaHTML, renderPresupuestoHTML, codigoComprobante } from "./factura-template.mjs";
 import { initDb, guardarFactura, listarFacturas, getFactura, contarFacturas, todasFacturas, guardarCliente as dbGuardarCliente, listarClientes, eliminarCliente as dbEliminarCliente, mergeClientes, mergeFacturas,
-  guardarPresupuesto, listarPresupuestos as dbListarPresupuestos, getPresupuesto, marcarPresupuestoFacturado, eliminarPresupuesto as dbEliminarPresupuesto, todosPresupuestos, mergePresupuestos, proximoNumeroPresupuesto } from "./db.mjs";
+  guardarPresupuesto, listarPresupuestos as dbListarPresupuestos, getPresupuesto, marcarPresupuestoFacturado, eliminarPresupuesto as dbEliminarPresupuesto, todosPresupuestos, mergePresupuestos, proximoNumeroPresupuesto,
+  setFacturaPublicToken } from "./db.mjs";
 import * as cloud from "./cloud.mjs";
 
 let PC = "PC";
@@ -326,7 +328,7 @@ function construirDetalle(items, tipo) {
  * Para B el precio ingresado es FINAL (con IVA); para A es NETO (sin IVA).
  * Devuelve { ok, id, record, nombreArchivo } o { ok:false, observaciones }.
  */
-export async function emitir({ receptorCond, docNro, nombre, domicilio, condVenta, items, ptoVta }) {
+export async function emitir({ receptorCond, docNro, nombre, domicilio, condVenta, items, ptoVta, origenPedidoId }) {
   await ensureTicket().catch(() => {});
   const map = COND_MAP[receptorCond] || COND_MAP["Consumidor Final"];
   const tipo = map.a ? "A" : "B";
@@ -393,6 +395,7 @@ export async function emitir({ receptorCond, docNro, nombre, domicilio, condVent
     importes: { neto: impNeto, iva: impIVA, otrosTributos: 0, total: impTotalFinal },
     qr,
     raw: result.raw,
+    ...(origenPedidoId ? { origenPedidoId } : {}),
   };
   if (identificado && nombre) guardarCliente({ cuit: docNroNum, nombre, condicion: receptorCond, domicilio });
   const id = Number(guardarFactura(record, now.toISOString()));
@@ -476,7 +479,7 @@ function logoDataUrl() {
  * Recibe los ítems ya limpios (precio FINAL con IVA), igual que `emitir`.
  * `validezDias` (opcional) calcula la fecha de vencimiento que figura en el PDF.
  */
-export function crearPresupuesto({ receptorCond, docNro, nombre, domicilio, condVenta, items, validezDias = 0, observaciones = "" }) {
+export function crearPresupuesto({ receptorCond, docNro, nombre, domicilio, condVenta, items, validezDias = 0, observaciones = "", sinTotal = false }) {
   const digits = String(docNro || "").replace(/\D/g, "");
   const sinDatos = !digits && !(nombre || "").trim();
   const condEfectiva = (receptorCond === "Consumidor Final" || sinDatos) ? "Consumidor Final" : receptorCond;
@@ -501,6 +504,7 @@ export function crearPresupuesto({ receptorCond, docNro, nombre, domicilio, cond
   const record = {
     clase: "PRESUPUESTO", uid, tipo, numero, fecha, validezDias: dias, vencimiento,
     observaciones: (observaciones || "").trim(),
+    sinTotal: !!sinTotal,
     receptor: {
       docLabel, docNro: docNroShow, nombre: nombre || "Consumidor Final",
       condicion: condEfectiva, domicilio: domicilio || "-", condVenta: condVenta || "Contado",
@@ -631,6 +635,21 @@ export function nombreArchivo(rec) {
   const pv = String(rec.ptoVta).padStart(5, "0");
   const nro = String(rec.numero).padStart(8, "0");
   return `${cuit}_${cod}_${pv}_${nro}.pdf`;
+}
+
+/**
+ * Nombre de archivo a usar en el bucket PÚBLICO (link "Ver factura"/compartir). A diferencia
+ * de `nombreArchivo()` (CUIT+número, perfecto para la carpeta local del usuario), acá no puede
+ * ser adivinable: cualquiera con un solo link podría ir cambiando el número y bajarse todas las
+ * demás facturas. Genera un token random la primera vez y lo reusa siempre para ese comprobante
+ * (mismo link si se vuelve a compartir, no un archivo nuevo cada vez).
+ */
+export function nombreArchivoPublico(id) {
+  const row = getFactura(id);
+  if (!row) throw new Error("Comprobante no encontrado.");
+  let token = row.record.publicToken;
+  if (!token) { token = randomUUID(); setFacturaPublicToken(id, token); }
+  return `${token}.pdf`;
 }
 
 // ---- Base de datos local ----
@@ -807,6 +826,13 @@ export async function detallePedido(orderId) {
   return { items: lineas, receptor, opciones, total: (order.total_cents || 0) / 100 };
 }
 
+/** Busca si ya se emitió acá una factura para este pedido (por `orderId`), sin depender de que
+ * la nube lo confirme. Es el resguardo local para no volver a facturar un pedido dos veces si
+ * en su momento falló avisarle a la tienda (ver `facturarPedido`). */
+export function facturaPorPedido(orderId) {
+  return todasFacturas().find((f) => f.record?.origenPedidoId === orderId) || null;
+}
+
 /**
  * Factura un pedido de la web y marca el CAE en el pedido. `receptor`, si viene (ya sea el
  * sugerido por `detallePedido` o el elegido a mano cuando había varias personas con el mismo
@@ -816,13 +842,26 @@ export async function facturarPedido(orderId, receptor) {
   const { order, items } = await cloud.getPedidoConItems(orderId);
   if (!order) throw new Error("Pedido no encontrado.");
   if (order.invoice_cae) throw new Error("Ese pedido ya está facturado.");
+
+  // Resguardo local: si ya se emitió una factura acá para este pedido pero no se pudo avisar
+  // a la tienda (ej. se cortó internet justo después), no facturar de nuevo — reintentar solo
+  // el aviso con la factura que ya existe. Sin esto, el pedido seguiría figurando "pendiente"
+  // en la tienda para siempre y se podría terminar emitiendo una segunda factura real por él.
+  const yaFacturado = facturaPorPedido(orderId);
+  if (yaFacturado) {
+    const r = yaFacturado.record;
+    const comp = `Factura ${r.tipo} ${String(r.ptoVta).padStart(5, "0")}-${String(r.numero).padStart(8, "0")}`;
+    await cloud.marcarPedidoFacturado(orderId, { invoice_id: comp, invoice_cae: r.cae }).catch(() => {});
+    return { ok: true, id: yaFacturado.id, record: r, nombreArchivo: nombreArchivo(r), yaExistia: true };
+  }
+
   const total = (order.total_cents || 0) / 100;
   if (total <= 0) throw new Error("El pedido no tiene importe.");
 
   const lineas = lineasDePedido(order, items);
   const receptorFinal = receptor || (await resolverReceptorPedido(order)).receptor;
 
-  const res = await emitir({ ...receptorFinal, condVenta: "Otra", ptoVta: getPtoVta(), items: lineas });
+  const res = await emitir({ ...receptorFinal, condVenta: "Otra", ptoVta: getPtoVta(), items: lineas, origenPedidoId: orderId });
   if (res.ok) {
     const r = res.record;
     const comp = `Factura ${r.tipo} ${String(r.ptoVta).padStart(5, "0")}-${String(r.numero).padStart(8, "0")}`;

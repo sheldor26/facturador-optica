@@ -85,6 +85,7 @@ export function renderPresupuestoHTML({ emisor, f, logoDataUrl, copias = ["ORIGI
   const neto = f.importes.neto ?? f.importes.total;
   const iva = f.importes.iva ?? 0;
   const totalF = f.importes.total;
+  const esLista = !!f.sinTotal;
   const totalesRows = esA
     ? `
       <tr><td class="lbl">Importe Neto Gravado: $</td><td>${num(neto)}</td></tr>
@@ -148,12 +149,16 @@ export function renderPresupuestoHTML({ emisor, f, logoDataUrl, copias = ["ORIGI
     </tbody>
   </table>
 
+  ${esLista ? `
+  <div class="lista-precios-nota">Valores de referencia por producto — no se suman en un total. El cliente elige la combinación que le convenga.</div>
+  ` : `
   <div class="totales">
     <table>${totalesRows}
     </table>
   </div>
   ${ivaContenido}
   <div class="enletras">${importeEnLetras(totalF)}</div>
+  `}
 
   <div class="obs">
     <div class="obs-t">Observaciones</div>
@@ -163,7 +168,9 @@ export function renderPresupuestoHTML({ emisor, f, logoDataUrl, copias = ["ORIGI
   <div class="presup-foot">
     <div class="leyenda">
       <b>DOCUMENTO NO VÁLIDO COMO FACTURA.</b> Presupuesto sin validez fiscal.
-      Los precios pueden estar sujetos a modificaciones${vencTxt ? ` y rigen hasta el ${vencTxt}` : ""}.
+      ${esLista
+        ? `Es una lista de precios orientativa, no un total a pagar${vencTxt ? `, válida hasta el ${vencTxt}` : ""}.`
+        : `Los precios pueden estar sujetos a modificaciones${vencTxt ? ` y rigen hasta el ${vencTxt}` : ""}.`}
       ${contacto ? `<div class="foot-cont">${contacto}</div>` : ""}
     </div>
     <div class="firma"><span>Firma y aclaración</span></div>
@@ -230,6 +237,8 @@ export function renderPresupuestoHTML({ emisor, f, logoDataUrl, copias = ["ORIGI
 
   .iva-cont { text-align: right; padding: 4px 13px 0; font-size: 10.5px; font-weight: bold; }
   .enletras { padding: 6px 13px 0; font-size: 10.5px; font-style: italic; font-weight: bold; color: var(--brand); text-transform: uppercase; }
+  .lista-precios-nota { margin: 8px 13px 0; padding: 7px 10px; background: #fff4d6; border: 1px solid #d9a400;
+    color: #7a5b00; font-size: 10.5px; font-weight: bold; text-align: center; }
 
   .obs { margin: 10px 13px 0; border: 1px solid var(--line); }
   .obs .obs-t { background: #f1f3f7; border-bottom: 1px solid var(--line); font-weight: bold; font-size: 9.5px;

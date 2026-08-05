@@ -159,7 +159,7 @@ ipcMain.handle("pedido:facturar", async (_e, id, receptor) => {
       const html = await eng.comprobanteHTMLPorId(res.id, ["ORIGINAL"]);
       const pdf = await htmlToPdfBuffer(html);
       const cld = await cloud();
-      const subida = await cld.subirComprobantePublico(eng.nombreArchivo(res.record), pdf);
+      const subida = await cld.subirComprobantePublico(eng.nombreArchivoPublico(res.id), pdf);
       if (subida.ok) {
         res.linkTienda = true;
         // La tienda guarda el link Y manda el mail (mismo texto que el panel admin).
@@ -227,9 +227,25 @@ ipcMain.handle("factura:subirPublico", async (_e, id) => {
   const html = await eng.comprobanteHTMLPorId(id, ["ORIGINAL"]);
   const pdf = await htmlToPdfBuffer(html);
   const cld = await cloud();
-  const res = await cld.subirComprobantePublico(eng.nombreArchivo(row.record), pdf);
+  const res = await cld.subirComprobantePublico(eng.nombreArchivoPublico(id), pdf);
   if (!res.ok) throw new Error(res.error || "No se pudo subir el comprobante.");
   return res.url;
+});
+// Abre el PDF del comprobante para mirarlo (no manda a la impresora). Reusa el archivo ya
+// guardado si existe; si no (ej. se guardó en otra carpeta la vez anterior), lo regenera.
+ipcMain.handle("factura:ver", async (_e, id) => {
+  const eng = await engine();
+  const row = eng.getFactura(id);
+  if (!row) throw new Error("Comprobante no encontrado");
+  const cfg = eng.getConfig();
+  const outPath = path.join(cfg.carpetaFacturas, eng.nombreArchivo(row.record));
+  if (!fs.existsSync(outPath)) {
+    const html = await eng.comprobanteHTMLPorId(id, ["ORIGINAL", "DUPLICADO"]);
+    fs.mkdirSync(cfg.carpetaFacturas, { recursive: true });
+    await htmlToPdf(html, outPath);
+  }
+  await shell.openPath(outPath);
+  return outPath;
 });
 ipcMain.handle("factura:imprimir", async (_e, id, copias) => {
   const eng = await engine();

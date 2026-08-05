@@ -14,6 +14,7 @@ _Backlog vivo de UI/UX, diseño, performance, facilidad de carga de datos y feat
 | 2026-08-03 (#2) | Catálogo en Emitir + fix de layout ya resueltos e implementados (ver #1). Segunda pasada con Codex+Agy enfocada en hallazgos NUEVOS: borrado de clientes sin confirmar, pedidos web "a ciegas", inconsistencias de impresión/feedback, punto de venta que escribe en cada tecla, presupuestos vencidos sin distinguir. |
 | 2026-08-03 (#3) | Nada implementado desde la corrida #2 (código sin cambios). Tercera pasada con foco ampliado al lado nativo (`electron/main.cjs`, `preload.cjs`, `Setup.jsx`) y accesibilidad de teclado transversal — las pantallas de renderer ya estaban bastante exprimidas. Salió una sección nueva: "Nativo / Electron". |
 | 2026-08-04 | Pedido de Juan (no salió del loop): al facturar un pedido web, poder pegar el link del PDF en el campo "Factura" de la tienda online sin subirlo a mano a Drive. **Implementado.** |
+| 2026-08-05 | Pedido de Juan: auditoría completa de **todo el programa** (no solo el diff), con Codex leyendo el repo entero y Agy enfocado en backend/Electron. Todo lo que salió esta vez fue bugs/seguridad — sin hallazgos nuevos de UI/UX puros — así que se agregó todo en [Auditoria-Facturador.md](Auditoria-Facturador.md) (Crítico #3 nuevo: pedido web facturable dos veces; más 4 de Importante y 4 menores). |
 
 ---
 

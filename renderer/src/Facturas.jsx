@@ -34,6 +34,11 @@ export default function Facturas({ toast }) {
     } catch (e) { toast?.(e?.message || String(e), "error"); }
   }
 
+  async function ver(id) {
+    try { await window.api.verFactura(id); }
+    catch (e) { toast?.(e?.message || String(e), "error"); }
+  }
+
   async function confirmarNota() {
     if (emitiendoRef.current) return; // ya se está emitiendo: ignorar clics repetidos
     emitiendoRef.current = true;
@@ -104,6 +109,7 @@ export default function Facturas({ toast }) {
                 <td className="r">{money(f.total)}</td>
                 <td className="cae">{f.cae || "—"}</td>
                 <td className="acciones">
+                  <button className="ghost mini" onClick={() => ver(f.id)}>Ver</button>
                   <button className="ghost mini" onClick={() => imprimir(f.id)}>Reimprimir</button>
                   <button className="ghost mini" onClick={() => { setCompartir({ f }); setCmedio("whatsapp"); setCdest(""); setLink(null); }}>Compartir</button>
                   {f.clase === "FACTURA" && (
