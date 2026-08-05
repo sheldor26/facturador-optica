@@ -145,11 +145,17 @@ export async function estampar(srcPath, outPath) {
   return { ...info, estampada: true };
 }
 
-/** Carpeta destino: <base>/<año>/<MES en texto>/<GRAV|NO GRAV>. La crea si no existe. */
+/** Carpeta destino: <base>/<año>/<MES en texto>/<GRAV|NO GRAV>. La crea si no existe.
+ * Año y mes se validan estrictos (no lo que venga por IPC tal cual): sin esto, un
+ * `anio`/`mes` con "../" escribiría fuera de la carpeta base de Sancor. */
 export function carpetaDestino(base, anio, mes, tipo) {
-  const mesTxt = typeof mes === "number" ? `${String(mes).padStart(2, "0")} - ${MESES[mes - 1] || ""}`.trim() : String(mes);
+  const anioNum = Number(anio);
+  if (!Number.isInteger(anioNum) || anioNum < 2000 || anioNum > 2100) throw new Error("Año de Sancor inválido.");
+  const mesNum = Number(mes);
+  if (!Number.isInteger(mesNum) || mesNum < 1 || mesNum > 12) throw new Error("Mes de Sancor inválido.");
+  const mesTxt = `${String(mesNum).padStart(2, "0")} - ${MESES[mesNum - 1]}`;
   const sub = tipo === "GRAV" ? "GRAV" : "NO GRAV";
-  const dir = path.join(base, String(anio), mesTxt, sub);
+  const dir = path.join(base, String(anioNum), mesTxt, sub);
   fs.mkdirSync(dir, { recursive: true });
   return dir;
 }

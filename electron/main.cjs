@@ -67,9 +67,14 @@ function comprimirImagen(srcPath, maxLado = 1600, calidad = 70) {
   try { return comprimirImagenBuffer(fs.readFileSync(srcPath), maxLado, calidad); } catch { return null; }
 }
 // Nombre libre dentro de dir (agrega -1, -2… si ya existe).
+// Devuelve un nombre de archivo LIBRE dentro de dir, agregando -1, -2... si ya existe.
+// Ojo: siempre se parte del basename, nunca del nombre crudo — antes, si el archivo no
+// colisionaba (el caso normal), `final` quedaba en el nombre tal cual llegó por IPC, y un
+// nombre con "../" habría escrito fuera de `dir` en vez de sanearse recién en la colisión.
 function nombreLibre(dir, nombre) {
-  const ext = path.extname(nombre), b = path.basename(nombre, ext);
-  let final = nombre, i = 1;
+  const base = path.basename(String(nombre || "foto")) || "foto";
+  const ext = path.extname(base), b = path.basename(base, ext) || "foto";
+  let final = base, i = 1;
   while (fs.existsSync(path.join(dir, final))) final = `${b}-${i++}${ext}`;
   return final;
 }
