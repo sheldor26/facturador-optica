@@ -49,13 +49,13 @@ Juan facturó un pedido desde "Pedidos web" y la factura salió a Consumidor Fin
 
 ## 🔴 Crítico
 
-### 1. Notas de Crédito/Débito: dos bugs nuevos sobre el código viejo
+### 1. ~~Notas de Crédito/Débito: dos bugs nuevos sobre el código viejo~~ — Resuelto (2026-08-05)
 
-`engine.mjs` → `emitirNota()`:
-- **Ignora el descuento por línea.** Reconstruye el importe como `cantidad * precioUnit` sin restar `descPct`/bonificación. Si la factura original tenía un descuento, la nota sale por más plata que la factura y **no cierra** con ella.
-- **Pierde la identificación del receptor.** Usa `map.a ? DocTipo.CUIT : DocTipo.CONSUMIDOR_FINAL` — para Factura B siempre manda `DocNro: 0` (anónimo), aunque la factura original haya sido una Factura B **identificada** con DNI/CUIT (la función nueva del commit "Factura B Consumidor Final + descuento", v1.0.9). Es una regresión funcional: antes no existía la Factura B identificada, ahora sí, y la nota no la contempla.
+`engine.mjs` → `emitirNota()` tenía dos bugs, reconfirmados de forma independiente por Codex y Agy en la ronda de auditoría del 2026-08-05:
+- **Ignoraba el descuento por línea.** Reconstruía el importe como `cantidad * precioUnit` sin restar `descPct`/bonificación. Si la factura original tenía un descuento, la nota salía por más plata que la factura y no cerraba con ella.
+- **Perdía la identificación del receptor.** Para Factura B siempre mandaba `DocNro: 0` (anónimo), aunque la factura original haya sido una Factura B **identificada** con DNI/CUIT.
 
-**Arreglo:** reconstruir la nota desde el `subtotal`/detalle fiscal ya calculado de la factura original (no recalcular desde cero) y copiar `docTipo`/`docNro`/`CondicionIVAReceptorId` de `orig.receptor`.
+**Arreglo:** los ítems de la nota ahora se arman desde el `subtotal` ya calculado de cada línea de la factura original (que ya trae el descuento aplicado), no desde `cantidad * precioUnit` en crudo. El documento del receptor (`docTipo`/`docNro`) ahora se copia de `orig.receptor.docLabel`/`docNro` tal cual quedó identificado en la factura original, en vez de asumirlo por la condición de IVA. Probado con un test aislado que cubre: Factura B con 20% de descuento e identificada por DNI (la nota debe salir sobre el importe con descuento, no sobre el de lista, y conservar el DNI), Factura B anónima (sigue anónima, no se le inventa un documento), y Factura A con descuento (el neto ya sin IVA también respeta el descuento).
 
 ### 2. ~~El guard anti-doble-clic quedó incompleto~~ — Resuelto (2026-08-03)
 
@@ -119,6 +119,7 @@ Codex y Agy llegaron al mismo hallazgo de forma independiente (uno con lectura c
 - **El modal de confirmación de Sancor dice "Pto. Vta. 7" fijo en el texto — Nuevo (2026-08-05) [C].** (`Sancor.jsx:319`) aunque la emisión real usa `eng.getPtoVta()` (configurable en Opciones). Si alguna vez se cambia el punto de venta, el texto de confirmación queda mintiendo sobre cuál se va a usar. → Mostrar el valor real de config o sacar el número del texto.
 - **Archivos temporales de impresión/PDF nombrados solo con `Date.now()` — Nuevo (2026-08-05) [C].** (`electron/main.cjs`, `htmlToPdfBuffer`/`imprimirHtml`) dos operaciones en el mismo milisegundo podrían pisarse el archivo temporal entre sí. Muy improbable en el uso real (una persona no dispara dos impresiones en el mismo milisegundo), pero `crypto.randomUUID()` en vez de `Date.now()` lo elimina del todo por el mismo costo.
 - **`importeEnLetras` no contempla importes negativos — Nuevo (2026-08-05) [A].** (`factura-template.mjs`) si algún día se genera un presupuesto con un total negativo (no debería poder pasar hoy por la UI, pero tampoco está bloqueado explícitamente), la conversión a letras rompe. Bajo riesgo, arreglo barato: `Math.abs()` + anteponer "MENOS " si corresponde.
+- ~~Los botones de "Ver/Reimprimir/Compartir/N. Crédito/N. Débito" quedaban corridos hacia la derecha en las filas con menos botones (ej. una Nota de Crédito, que no tiene N. Crédito/N. Débito)~~ — Reportado por Juan y resuelto (2026-08-05). `.grid td.acciones` usaba `justify-content: flex-end`; con `flex-start` todas las filas arrancan sus botones en la misma posición, tengan 3 o 5. Afecta por igual a Facturas emitidas y Presupuestos (comparten la misma clase CSS).
 
 ---
 
@@ -126,7 +127,7 @@ Codex y Agy llegaron al mismo hallazgo de forma independiente (uno con lectura c
 
 **Esta semana (fiscal + duplicados + privacidad de esta sesión):**
 1. ~~Completar el guard anti-doble-clic en Presupuestos/Pedidos/Facturas~~ ✅ hecho (2026-08-03).
-2. Arreglar Nota de Crédito/Débito: descuento por línea + identificación del receptor (Crítico #1).
+2. ~~Arreglar Nota de Crédito/Débito: descuento por línea + identificación del receptor (Crítico #1)~~ ✅ hecho (2026-08-05).
 3. ~~Pedido web facturado dos veces si falla avisar a Supabase (Crítico #3)~~ ✅ hecho (2026-08-05).
 4. ~~Nombre de archivo predecible en el link público de comprobantes (Importante #10)~~ ✅ hecho (2026-08-05) — de paso se sacó una política de Supabase que permitía listar el bucket entero con la clave anónima.
 5. `backups/` al `.gitignore` (Importante #6) — un minuto, evita un problema serio si se comitea sin querer.

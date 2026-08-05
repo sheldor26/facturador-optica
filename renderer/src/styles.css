@@ -162,7 +162,7 @@ button.mini { padding: 6px 11px; font-size: 12px; }
 .grid td.r, .grid th.r { text-align: right; font-variant-numeric: tabular-nums; }
 .grid td.cae { font-variant-numeric: tabular-nums; color: var(--muted); }
 .grid td.empty { text-align: center; color: var(--muted); padding: 34px; }
-.grid td.acciones { display: flex; gap: 6px; justify-content: flex-end; }
+.grid td.acciones { display: flex; gap: 6px; justify-content: flex-start; }
 .mini-grid { margin-top: 8px; box-shadow: none; }
 .mini-grid td { font-size: 13px; }
 

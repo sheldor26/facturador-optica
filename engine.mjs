@@ -417,16 +417,24 @@ export async function emitirNota({ clase, facturaId }) {
   const tipo = orig.tipo; // A | B
   const origCbteTipo = tipo === "A" ? CbteTipo.FACTURA_A : CbteTipo.FACTURA_B;
   const map = COND_MAP[orig.receptor?.condicion] || COND_MAP["Consumidor Final"];
-  const docTipo = map.a ? DocTipo.CUIT : DocTipo.CONSUMIDOR_FINAL;
-  const docNroNum = map.a ? Number(String(orig.receptor?.docNro).replace(/\D/g, "")) : 0;
 
-  // Reconstruir los ítems (mismo importe que la original)
+  // Documento del receptor: copiado de la factura original tal cual quedó identificada
+  // (CUIT, DNI, o anónima), no asumido por su condición de IVA — así una Factura B
+  // identificada con DNI/CUIT no pierde esa identificación en la nota.
+  const digitsOrig = String(orig.receptor?.docNro || "").replace(/\D/g, "");
+  let docTipo, docNroNum;
+  if (orig.receptor?.docLabel === "CUIT" && /^\d{11}$/.test(digitsOrig)) { docTipo = DocTipo.CUIT; docNroNum = Number(digitsOrig); }
+  else if (orig.receptor?.docLabel === "DNI" && /^\d{7,8}$/.test(digitsOrig)) { docTipo = DocTipo.DNI; docNroNum = Number(digitsOrig); }
+  else { docTipo = DocTipo.CONSUMIDOR_FINAL; docNroNum = 0; }
+
+  // Reconstruir los ítems desde el `subtotal` YA calculado de cada línea (con el descuento/
+  // bonificación aplicado), no desde `cantidad * precioUnit` en crudo — si no, una nota sobre
+  // una factura con descuento sale por más plata de la que realmente se cobró.
   const lineItems = [];
   for (const it of orig.items || []) {
     if (it.nota) continue;
-    const cant = Number(it.cantidad);
-    const precio = Number(it.precioUnit);
-    lineItems.push({ neto: tipo === "B" ? round2((cant * precio) / (1 + RATE)) : round2(cant * precio), iva: IvaTipo.IVA_21 });
+    const subtotal = Number(it.subtotal); // A: neto sin IVA · B: final con IVA — ambos con descuento ya aplicado
+    lineItems.push({ neto: tipo === "B" ? round2(subtotal / (1 + RATE)) : subtotal, iva: IvaTipo.IVA_21 });
   }
 
   const opts = {
