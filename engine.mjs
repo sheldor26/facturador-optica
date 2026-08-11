@@ -279,7 +279,7 @@ const RATE = 0.21; // IVA 21% (única alícuota por ahora)
 const COND_MAP = {
   "Consumidor Final": { cond: CondicionIva.CONSUMIDOR_FINAL, a: false },
   "IVA Responsable Inscripto": { cond: CondicionIva.RESPONSABLE_INSCRIPTO, a: true },
-  "Responsable Monotributo": { cond: CondicionIva.MONOTRIBUTISTA, a: false }, // monotributo recibe Factura B
+  "Responsable Monotributo": { cond: CondicionIva.MONOTRIBUTISTA, a: false }, // sigue siendo Factura B (ver nota en emitir())
 
   "IVA Sujeto Exento": { cond: CondicionIva.EXENTO, a: false },
 };
@@ -338,10 +338,18 @@ export async function emitir({ receptorCond, docNro, nombre, domicilio, condVent
   const map = COND_MAP[receptorCond] || COND_MAP["Consumidor Final"];
   const tipo = map.a ? "A" : "B";
   const cbteTipo = tipo === "A" ? CbteTipo.FACTURA_A : CbteTipo.FACTURA_B;
-  const esCF = receptorCond === "Consumidor Final";
+  // Un Responsable Monotributo se factura igual que Consumidor Final identificado (mismo
+  // CondicionIVAReceptorId=5, misma identificación opcional por DNI/CUIT): confirmado contra
+  // la tabla en vivo de ARCA (FEParamGetCondicionIvaReceptor) que el código de Monotributista
+  // (6) NO es válido en Factura B — solo en A/C — y esta app siempre factura B a quien no sea
+  // IVA Responsable Inscripto. Sin este ajuste, un cliente que el padrón identifica como
+  // Monotributo (aunque tenga DNI/CUIT cargado) hace que ARCA rechace la factura con
+  // "Condicion IVA receptor no es valido para la clase de comprobante informado".
+  const esCF = receptorCond === "Consumidor Final" || receptorCond === "Responsable Monotributo";
 
-  // Documento del receptor. Para Consumidor Final identificarlo es OPCIONAL: si cargan
-  // DNI (7-8) o CUIT (11) la factura sale con sus datos; si no, sale anónima.
+  // Documento del receptor. Para Consumidor Final (y Monotributo, ver arriba) identificarlo
+  // es OPCIONAL: si cargan DNI (7-8) o CUIT (11) la factura sale con sus datos; si no, sale
+  // anónima.
   const digits = String(docNro || "").replace(/\D/g, "");
   let docTipo, docNroNum;
   if (!esCF) { docTipo = DocTipo.CUIT; docNroNum = Number(digits); }
@@ -422,6 +430,9 @@ export async function emitirNota({ clase, facturaId }) {
   const tipo = orig.tipo; // A | B
   const origCbteTipo = tipo === "A" ? CbteTipo.FACTURA_A : CbteTipo.FACTURA_B;
   const map = COND_MAP[orig.receptor?.condicion] || COND_MAP["Consumidor Final"];
+  // Responsable Monotributo se factura (y se nota) como Consumidor Final — ver el comentario
+  // largo en emitir(): ARCA no acepta el código de Monotributista en clase B/C-nota-de-B.
+  const esMonotributoComoCF = orig.receptor?.condicion === "Responsable Monotributo";
 
   // Documento del receptor: copiado de la factura original tal cual quedó identificada
   // (CUIT, DNI, o anónima), no asumido por su condición de IVA — así una Factura B
@@ -443,7 +454,9 @@ export async function emitirNota({ clase, facturaId }) {
   }
 
   const opts = {
-    ptoVta: orig.ptoVta, docTipo, docNro: docNroNum, condicionIva: map.cond, items: lineItems,
+    ptoVta: orig.ptoVta, docTipo, docNro: docNroNum,
+    condicionIva: esMonotributoComoCF ? CondicionIva.CONSUMIDOR_FINAL : map.cond,
+    items: lineItems,
     comprobanteOriginal: { tipo: origCbteTipo, ptoVta: orig.ptoVta, nro: orig.numero, fecha: orig.fecha },
   };
   const result = clase === "NC" ? await getArca().notaCredito(opts) : await getArca().notaDebito(opts);
