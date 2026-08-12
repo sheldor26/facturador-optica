@@ -284,6 +284,13 @@ const COND_MAP = {
   "IVA Sujeto Exento": { cond: CondicionIva.EXENTO, a: false },
 };
 
+/** ¿El rechazo de ARCA fue por la condición de IVA del receptor (no por otra cosa, como un
+ * ítem inválido o un problema de conexión)? Sirve para decidir si vale la pena reintentar
+ * como Consumidor Final en vez de simplemente fallar. */
+function esRechazoPorCondicionIva(observaciones) {
+  return (observaciones || []).some((o) => /condicion.*iva/i.test(o.msg || ""));
+}
+
 /** Parsea el resultado crudo de FECAESolicitar (CAE, vencimiento, número, observaciones). */
 function parseCAE(raw) {
   const arr = Array.isArray(raw.FeDetResp.FECAEDetResponse) ? raw.FeDetResp.FECAEDetResponse : [raw.FeDetResp.FECAEDetResponse];
@@ -887,7 +894,15 @@ export async function facturarPedido(orderId, receptor) {
   const lineas = lineasDePedido(order, items);
   const receptorFinal = receptor || (await resolverReceptorPedido(order)).receptor;
 
-  const res = await emitir({ ...receptorFinal, condVenta: "Otra", ptoVta: getPtoVta(), items: lineas, origenPedidoId: orderId });
+  let res = await emitir({ ...receptorFinal, condVenta: "Otra", ptoVta: getPtoVta(), items: lineas, origenPedidoId: orderId });
+  // Si ARCA rechaza puntualmente la condición de IVA del receptor identificado (pasa cuando
+  // el padrón devuelve una condición que ARCA dejó de aceptar para esta clase de comprobante,
+  // como pasó con Responsable Monotributo — ver Auditoria-Facturador.md), no dejar el pedido
+  // sin facturar: reintentar como Consumidor Final, conservando nombre/documento si los había.
+  if (!res.ok && receptorFinal.receptorCond !== "Consumidor Final" && esRechazoPorCondicionIva(res.observaciones)) {
+    res = await emitir({ ...receptorFinal, receptorCond: "Consumidor Final", condVenta: "Otra", ptoVta: getPtoVta(), items: lineas, origenPedidoId: orderId });
+    if (res.ok) res.corregidoAConsumidorFinal = true;
+  }
   if (res.ok) {
     const r = res.record;
     const comp = `Factura ${r.tipo} ${String(r.ptoVta).padStart(5, "0")}-${String(r.numero).padStart(8, "0")}`;

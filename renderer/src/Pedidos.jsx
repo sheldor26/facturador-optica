@@ -45,6 +45,9 @@ export default function Pedidos({ toast }) {
         if (res.yaExistia) {
           toast?.("Este pedido ya se había facturado acá (" + res.record.cae + ") — solo no se había avisado a la tienda. Se reintentó el aviso; no se reimprimió.");
         } else {
+          if (res.corregidoAConsumidorFinal) {
+            toast?.("ARCA no aceptó la condición de IVA del comprador identificado, así que se facturó como Consumidor Final para no dejarlo sin facturar. Revisalo si hace falta.", "error");
+          }
           toast?.(!res.linkTienda
             ? "Pedido facturado: " + res.record.cae + " (no se pudo subir el link a la tienda, se puede subir a mano desde Facturas emitidas)."
             : res.mailEnviado
