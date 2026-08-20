@@ -1,6 +1,6 @@
 {
   "name": "facturador-optica",
-  "version": "1.0.24",
+  "version": "1.0.25",
   "description": "",
   "main": "electron/main.cjs",
   "scripts": {
@@ -37,6 +37,7 @@
       "arca-tls-fix.mjs",
       "db.mjs",
       "cloud.mjs",
+      "gestion.mjs",
       "cloud-config.json",
       "assets/**",
       "!**/*.pem",

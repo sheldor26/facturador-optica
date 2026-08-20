@@ -16,7 +16,8 @@ const NAV = [
   { key: "rapida", label: "Factura rápida" },
   { key: "emitir", label: "Emitir factura" },
   { key: "presupuestos", label: "Presupuestos" },
-  { key: "pedidos", label: "Pedidos web" },
+  // Ya no son sólo los de la tienda: acá también entran las órdenes del mostrador.
+  { key: "pedidos", label: "Para facturar" },
   { key: "facturas", label: "Facturas emitidas" },
   { key: "clientes", label: "Clientes" },
   { key: "sancor", label: "Sancor" },

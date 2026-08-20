@@ -151,12 +151,25 @@ ipcMain.handle("padron:consultar", async (_e, cuit) => (await engine()).consulta
 ipcMain.handle("factura:emitir", async (_e, opts) => (await engine()).emitir(opts));
 ipcMain.handle("factura:nota", async (_e, opts) => (await engine()).emitirNota(opts));
 ipcMain.handle("facturas:listar", async (_e, q) => (await engine()).listarFacturas({ q }));
+ipcMain.handle("facturas:revisarNumeracion", async (_e, recuperar) => (await engine()).revisarNumeracion({ recuperar: !!recuperar }));
 ipcMain.handle("nube:sincronizar", async () => (await engine()).sincronizarNube());
 ipcMain.handle("pedidos:listar", async () => (await engine()).pedidosPendientes());
-ipcMain.handle("pedido:detalle", async (_e, id) => (await engine()).detallePedido(id));
-ipcMain.handle("pedido:facturar", async (_e, id, receptor) => {
+ipcMain.handle("ordenes:listar", async () => {
+  // Si el sistema de la óptica no está configurado o está apagado, la pantalla
+  // tiene que seguir mostrando los pedidos de la tienda igual.
+  try { return { ordenes: await (await engine()).ordenesDeGestion() }; }
+  catch (e) { return { ordenes: [], error: e?.message || String(e) }; }
+});
+ipcMain.handle("orden:descartar", async (_e, clave, motivo) =>
+  (await engine()).descartarOrdenDeGestion(clave, motivo));
+ipcMain.handle("orden:facturar", async (_e, clave, opciones) => {
   const eng = await engine();
-  const res = await eng.facturarPedido(id, receptor);
+  return eng.facturarOrdenDeGestion(clave, opciones);
+});
+ipcMain.handle("pedido:detalle", async (_e, id) => (await engine()).detallePedido(id));
+ipcMain.handle("pedido:facturar", async (_e, id, receptor, opciones) => {
+  const eng = await engine();
+  const res = await eng.facturarPedido(id, receptor, opciones);
   if (res.ok) {
     // Best-effort: la factura ya se emitió con CAE (lo importante). Esto solo evita
     // tener que entrar a la tienda a pegar el link y tildar "avisar por mail" a mano.
@@ -372,6 +385,8 @@ ipcMain.handle("cloud:guardarCred", async (_e, c) => {
 });
 
 // ---- Tienda online: avisar por mail al facturar un pedido web (por PC) ----
+ipcMain.handle("gestion:estadoCred", async () => (await engine()).gestionEstadoCred());
+ipcMain.handle("gestion:guardarCred", async (_e, c) => { (await engine()).gestionGuardarCred(c); return true; });
 ipcMain.handle("tienda:estadoCred", async () => (await engine()).tiendaEstadoCred());
 ipcMain.handle("tienda:guardarCred", async (_e, c) => { (await engine()).tiendaGuardarCred(c); return true; });
 

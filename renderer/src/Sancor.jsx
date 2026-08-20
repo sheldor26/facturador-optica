@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { mensajeHumano } from "./errores.js";
 
 const MESES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
   "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
@@ -176,7 +177,9 @@ export default function Sancor({ toast }) {
           else toast?.(`No se pudo emitir ${f.resultado.tipo}: ${r.error}`, "err");
         } catch (e) {
           // Un fallo en una no debe cortar las demás.
-          setEmisiones((prev) => ({ ...prev, [f.path]: { ok: false, error: e?.message || String(e) } }));
+          // Por mensajeHumano y no en crudo: acá también se emite por ARCA, y el aviso de
+          // "no se sabe si salió" tiene que llegar entero (ver errores.js).
+          setEmisiones((prev) => ({ ...prev, [f.path]: { ok: false, error: mensajeHumano(e) } }));
           toast?.(`No se pudo emitir ${f.resultado.tipo}`, "err");
         }
       }

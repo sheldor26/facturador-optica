@@ -2,6 +2,15 @@
 // No cambia la lógica: solo el texto que se muestra cuando algo sale mal.
 export function mensajeHumano(e) {
   const msg = (typeof e === "string" ? e : e?.message || "").toString();
+
+  // ANTES QUE CUALQUIER OTRA COSA: el aviso de "no se sabe si la factura salió" se muestra
+  // tal cual, sin resumir ni traducir. Adentro lleva el motivo técnico original (muchas
+  // veces "fetch failed"), así que sin este atajo caería en la regla de conexión de acá
+  // abajo y terminaría diciendo "probá de nuevo" — el único consejo que no hay que dar,
+  // porque emite la factura por segunda vez. Ver `SinConfirmar` en engine.mjs.
+  const marca = "[SIN-CONFIRMAR]";
+  if (msg.includes(marca)) return msg.slice(msg.indexOf(marca) + marca.length).trim();
+
   const m = msg.toLowerCase();
 
   if (/fetch failed|enotfound|econnrefused|econnreset|network|timeout|etimedout|aborted|getaddrinfo|dns/.test(m))

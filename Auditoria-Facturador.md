@@ -14,6 +14,92 @@ Los demás hallazgos nuevos son de menor severidad y quedaron incorporados en su
 
 ---
 
+## 🆕 Ronda 2026-08-14: ¿aguanta que el trabajo se lo mande otro programa?
+
+Juan quiere que el sistema de gestión nuevo le pase al Facturador el detalle de la ficha y los precios (sin la graduación) para que la factura salga de acá. Antes de conectar nada se auditó de nuevo con Codex y Antigravity, con una pregunta concreta: **¿qué se rompe cuando el disparador deja de ser una persona?**
+
+**Los dos dieron NO-GO para la emisión automática.** El resumen de Codex describe bien el fondo del asunto: *`emitir()` hoy no es una API fiscal dura: confía en que una persona y la UI ya revisaron condición IVA, documento, importes, líneas válidas, total esperado y unicidad del trabajo.*
+
+De los cuatro hallazgos que coincidieron, se arreglaron los dos que pueden costar un problema con el fisco.
+
+### 1. Una factura podía emitirse en ARCA y perderse acá — Resuelto (2026-08-14)
+
+Si se cortaba internet **después** de que ARCA autorizaba y **antes** de que llegara la respuesta, el comprobante existía —legal, declarado, consultable por el QR— pero en la base local no quedaba nada. La factura siguiente tomaba el número de más allá y el salto en la numeración aparecía meses después. No había ninguna forma de recuperarlo: `FECompConsultar` estaba sólo en un script suelto (`consultar-factura.mjs`), nunca en el motor.
+
+**Arreglo, en dos partes.**
+
+Ya no se usa `crearFacturaAuto`, que elige el número adentro y no lo cuenta: ahora se pide el número primero y se manda explícito (las mismas dos llamadas a ARCA que hacía antes, no una más). Sabiendo qué número se pidió, cuando algo falla se le puede preguntar a ARCA por ese número exacto, y hay **tres** respuestas posibles en vez de dos: no existe (no se emitió, se reintenta), existe y es el nuestro (se guarda con el CAE que ARCA ya había dado), o no se puede preguntar. Ese tercer caso es el importante: antes se mostraba *"no se pudo conectar, probá de nuevo"*, que es exactamente el consejo que duplica la factura. Ahora dice que no se sabe y que no se vuelva a emitir hasta averiguarlo. Los mismos tres caminos se aplican a las Notas de Crédito y Débito.
+
+Eso cubre el corte con el programa abierto. Para el otro caso —se cortó la luz, se cerró el programa— está **Opciones → "Revisar numeración"**: compara hasta dónde llegó ARCA contra lo que hay en la base y trae lo que falte. Ojo con una limitación real: ARCA guarda el comprobante fiscal (número, fecha, CAE, importes, documento del receptor) pero **no guarda los renglones**, así que un comprobante recuperado queda completo para el contador y para ARCA, y marcado y sin detalle de lo vendido.
+
+Detalle que casi arruina el arreglo: el aviso de "no se sabe" lleva adentro el motivo técnico original, muchas veces `fetch failed`. Sin una marca que lo saltee, `mensajeHumano()` (`errores.js`) lo habría traducido a *"revisá tu conexión y probá de nuevo en un momento"* — el mensaje correcto convertido en el peligroso. Por eso `SinConfirmar` lleva el prefijo `[SIN-CONFIRMAR]`, que es lo único que sobrevive al cruce a la pantalla.
+
+**Probado** con los cinco caminos simulados (todo bien · no existe · salió y se rescata · no se puede preguntar · el número lo tomó otro comprobante), el barrido de faltantes con siete casos (base al día, hueco al final, hueco en el medio, historia previa al programa, notas de crédito, instalación nueva, tope de 40 por corrida) y el paso del mensaje por `mensajeHumano()`. **No se tocó ARCA de producción**: una consulta desde acá podía renovar el token compartido y dejar a la óptica sin poder facturar por 12 horas.
+
+### 2. Dos emisiones simultáneas del mismo trabajo — Resuelto (2026-08-14)
+
+Facturar un pedido es mirar si ya está facturado y, si no, emitir. Entre esas dos cosas pasan los segundos que tarda ARCA, y en esos segundos el pedido sigue figurando sin facturar. Hoy lo tapa el botón de la pantalla; **automatizado, esa ventana se abre**.
+
+**Lo que se arregló:** dentro de una computadora, el segundo intento sobre el mismo pedido ya no emite nada — se engancha al que está en curso y recibe su resultado. Cubre el doble clic y la misma pantalla abierta dos veces. Aparte, las emisiones de esta PC ahora salen de a una: los números de ARCA son correlativos y dos emisiones a la vez pedían el mismo "último + 1", y la segunda se rechazaba con un error que no explicaba nada.
+
+**Entre computadoras distintas: el candado en la nube.** Juan eligió la columna nueva (migración `orders_candado_de_facturacion`, aplicada el 14/08/2026). La tabla `orders` de la tienda tiene ahora `invoice_claim` (qué computadora está emitiendo) e `invoice_claimed_at` (desde cuándo). Las dos son opcionales, arrancaron vacías en los seis pedidos que había, y la tienda no las lee.
+
+Lo importante es que **no es un chequeo previo** —eso es justamente lo que no alcanzaba— sino una escritura condicional: el `UPDATE` lleva adentro la condición de que nadie lo haya tomado, y el empate lo resuelve la base, que es el único lugar donde se puede resolver de verdad. Si dos PCs lo intentan en el mismo instante, la segunda espera a que la primera termine, vuelve a mirar la fila ya cambiada y no actualiza ninguna: se entera antes de hablar con ARCA.
+
+El candado se toma **lo más tarde posible**, cuando ya pasó todo lo que puede fallar sin llegar a ARCA, y se suelta en un `finally` unos segundos después. La lista de Pedidos web muestra "Lo está facturando \<PC\>" en vez del botón, así nadie lo intenta al pedo.
+
+**Si una computadora se apaga a mitad**, el candado queda puesto. Pasados 15 minutos el programa lo da por abandonado, pero **no lo toma solo**: muestra quién lo tenía, desde cuándo, y avisa que si esa máquina llegó a emitir van a salir dos facturas. Decide una persona. Ese "casi siempre se apagó" no alcanza para automatizarlo, porque el caso que falta es exactamente el que se está tratando de evitar.
+
+**Probado contra la base real**, en transacciones que se deshacen solas y sobre pedidos de mentira (verificado después: seis pedidos, cero candados, cero restos). Tres casos: dos PCs peleando por el mismo pedido → la segunda actualiza 0 filas y el pedido queda de la primera; forzar sobre un candado viejo → funciona; forzar sobre un pedido **ya facturado** → 0 filas, que es el que nunca tiene que poder. Esa última condición no se saca ni forzando.
+
+**Para el repositorio de la tienda:** la columna se agregó directo a la base. Si la tienda lleva sus propias migraciones versionadas, conviene dejar ahí un archivo equivalente para que un despliegue desde cero no quede sin estas dos columnas.
+
+### 3. Las puertas de atrás del motor — Resueltas (2026-08-14)
+
+Cuatro agujeros que hoy tapa la pantalla y que un programa mandando datos habría atravesado derecho. Todos son guardas de una o dos líneas; ninguna cambia nada de lo que ya funcionaba (verificado: los cuatro textos de condición de IVA que usan las pantallas y los dos valores de clase de nota que manda `Facturas.jsx` coinciden exacto con lo que ahora se exige).
+
+- **La condición de IVA ya no cae en silencio a Consumidor Final [C][A].** `COND_MAP[receptorCond] || COND_MAP["Consumidor Final"]` hacía que un `"IVA Responsable Inscripto "` con un espacio de más saliera como Factura B en vez de A. Ahora se recorta el texto y, si no es una de las cuatro, falla diciendo cuáles son. Vacío sigue significando Consumidor Final: es la venta anónima de mostrador. (No confundir con el reintento a Consumidor Final de `facturarPedido`, que es intencional, pedido por Juan el 11/08/2026 y con aviso a la vista.)
+- **Una nota que no diga exactamente `"NC"` ya no sale como Nota de Débito [C].** Era `clase === "NC" ? notaCredito : notaDebito`, sin lista blanca: un `"NC "` con un espacio y, en vez de anular la factura, la aumentaba. Ahora sólo se aceptan `"NC"` y `"ND"`.
+- **Ya no se puede facturar una lista de precios [C].** Un presupuesto `sinTotal` —los que llevan alternativas para que el cliente elija, y cuyo PDF aclara que no se suman— no se podía facturar desde la pantalla, pero sí por IPC: `facturarPresupuesto()` nunca miraba esa marca. Con alternativas de $40.000 y $50.000 emitía una factura de $90.000 de algo que nadie compró.
+- **`saveToken()` ahora chequea `r.ok` [C]** (`cloud.mjs`): si la nube rechazaba el upsert, la PC creía haber publicado el token igual y las otras dos se quedaban con el viejo. Quien llama sigue tratándolo como best-effort; lo que cambia es que ahora falla a la vista.
+
+De paso se tapó un agujero que abrió el arreglo del punto 1: **no se puede emitir una nota sobre un comprobante recuperado de ARCA**, porque ése no trae los renglones y la nota saldría por cero. Esos casos se resuelven en el portal de ARCA.
+
+### 4. El motor no revisaba ningún importe — Resuelto (2026-08-14)
+
+Confiaba en que la pantalla ya había limpiado lo que le llegaba. Y la pantalla limpia bien: descarta renglones con cantidad o precio en cero o negativos. El problema es que no es la única puerta — el IPC llega derecho al motor. Verificado con `construirDetalle` aislado: un precio que no es número daba un total `NaN` y seguía viaje, y una cantidad negativa producía una factura de −$50.000.
+
+Ahora hay **un solo lugar** que decide qué es un importe válido (`revisarItems`, en `engine.mjs`), y pasan por ahí tanto la emisión como el presupuesto. Se rechaza, diciendo qué renglón y por qué: cantidad o precio que no sean números, cantidad o precio menores o iguales a cero, descuentos fuera de 0-100, un comprobante sin renglones, y uno donde todos los renglones sean líneas de texto sin importe. Aparte, `emitir()` se niega a facturar por cero.
+
+**Sobre los decimales:** un precio con tres decimales se rechaza en vez de redondearlo. Redondear es cambiarle el precio a alguien sin avisarle, y además no cierra — diez renglones de $100,005 dan $1.000,05 si se suma primero y $1.000,10 si se redondea renglón por renglón, que es lo que hace este motor. Antes que declarar un número distinto del que calculó quien lo mandó, se dice que el precio está mal escrito.
+
+**`totalEsperado`, el chequeo que hace confiable al puente.** `emitir()` acepta ahora un total opcional: quien manda el trabajo dice cuánto espera cobrar, el motor lo recalcula desde los renglones, y si no coinciden **no emite nada**. Es la diferencia entre un motor que obedece y uno que confirma. Ya está conectado en los pedidos web, que tienen el total del lado de la tienda, así que el chequeo corre desde hoy y no sólo cuando se conecte la gestión.
+
+**Regresión encontrada y arreglada de paso:** `lineasDePedido()` sacaba el precio unitario dividiendo el total del renglón por la cantidad, y esa división no siempre da justo — tres unidades de un renglón de $100 dan $33,3333. Hasta ahora pasaba igual y el redondeo del motor lo tapaba de casualidad; con los importes revisados habría empezado a rechazar pedidos web. Ahora, cuando no divide justo, el renglón va con cantidad 1 por el total y la cantidad queda dicha en la descripción: el importe es exacto y no se pierde el dato. **Probado** con cinco formas de pedido (divide justo, no divide justo, centavos, con envío, con descuento): los cinco cierran exacto contra el total del pedido.
+
+**Probado también** con seis casos que tienen que seguir andando (venta normal, varias unidades, con descuento, con centavos, con línea de texto suelta, descuento vacío como lo manda la pantalla) y once que antes pasaban y ahora no. Verificado que las pantallas de Emitir y Presupuestos ya filtran con el mismo criterio (`precioUnit > 0 && cantidad > 0`), así que nada de lo que hoy se puede cargar a mano queda rechazado.
+
+### 5. El documento del receptor tampoco se revisaba — Resuelto (2026-08-14)
+
+Para un Responsable Inscripto se hacía `Number(digits)` y listo: con el campo vacío salía CUIT `0`, y con cinco dígitos salía ese número. ARCA lo rechazaba, así que no llegaba a emitirse nada mal — pero el error venía de ARCA y en su idioma, cuando el problema estaba acá y se podía decir claro.
+
+Hay **dos situaciones distintas y ahora se tratan distinto**, que es lo que hace que esto no moleste en el mostrador:
+
+- **Factura A** (Responsable Inscripto, Sujeto Exento): el CUIT es obligatorio y tiene que ser un CUIT de verdad. Se exige, y se le revisa el **dígito verificador**, que agarra el número mal tipeado antes de mandarlo y sin preguntarle a nadie. El algoritmo ya estaba en el archivo (lo usa la búsqueda por DNI en el padrón); se verificó contra cuatro CUITs reales conocidos —incluido el de Sancor, que es el que factura el propio programa— y contra dos falsos.
+- **Consumidor Final**: identificarse sigue siendo **opcional**, porque la venta anónima de mostrador es la más común que hay. Campo vacío, factura anónima, todo bien. Pero si viene algo escrito, ese algo tiene que ser un DNI (7-8) o un CUIT (11) válido: alguien quiso identificar al cliente, y dejarlo pasar en silencio significa emitir una factura que no dice quién compró. Eso antes pasaba — cinco dígitos y la factura salía anónima sin que nadie se enterara.
+
+**Los pedidos web son la excepción, a propósito.** El documento lo escribió el cliente en la tienda, sin nadie que lo revise, y la venta ya está paga: frenarla porque puso mal el DNI sería peor que emitirla sin nombre. Esa decisión vive en `resolverReceptorPedido()`, no en el motor — el motor sigue siendo estricto, porque cuando alguien carga un documento desde el mostrador ese aviso sirve. **Probado**: de siete cosas que un cliente puede llegar a escribir (DNI bueno, CUIT bueno, cinco dígitos, CUIT mal tipeado, vacío, texto, un teléfono), ninguna frena la venta y las dos válidas conservan la identificación.
+
+Los catorce casos del motor también quedaron probados, y se confirmó que el CUIT de Sancor —el único que el programa factura solo— pasa.
+
+### Lo que sigue abierto de esta ronda
+
+Con los cinco puntos cerrados, **el NO-GO de esta ronda queda levantado**: el motor valida importes, confirma contra el total que manda el origen, exige documentos válidos, no pierde una factura si se corta la luz y no deja que dos computadoras facturen la misma venta. Lo que sigue es construir el puente con el sistema de gestión, que ya tiene de este lado un contrato al que agarrarse.
+
+- **Las notas de crédito dejan centavos sin cancelar [A].** Por redondeo línea por línea contra el consolidado, una factura de $30 se cancela con una nota de $29,98. Real, pero no bloquea nada.
+
+---
+
 ## 🐞 Reportado por Juan en producción (no salió en las auditorías)
 
 ### ARCA rechazaba facturar a un cliente identificado como Responsable Monotributo — Resuelto (2026-08-11)

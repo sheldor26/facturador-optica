@@ -151,7 +151,9 @@ export async function deleteCliente(cuit) {
 }
 // ---- Pedidos de la tienda web ----
 export async function fetchPedidos() {
-  const sel = "id,order_number,status,payment_status,paid_at,customer_name,customer_dni,total_cents,created_at,invoice_cae";
+  // `invoice_claim` viaja para que la lista pueda decir que otra computadora lo está
+  // facturando ahora mismo, en vez de dejar que alguien lo intente y choque contra el candado.
+  const sel = "id,order_number,status,payment_status,paid_at,customer_name,customer_dni,total_cents,created_at,invoice_cae,invoice_claim,invoice_claimed_at";
   const r = await req(`orders?select=${sel}&invoice_cae=is.null&payment_status=eq.approved&status=neq.cancelled&order=created_at.desc&limit=100`);
   return r.ok ? r.json() : [];
 }
@@ -166,6 +168,43 @@ export async function marcarPedidoFacturado(id, fields) {
   await req(`orders?id=eq.${id}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify(fields) });
 }
 
+/*
+ * TOMAR EL PEDIDO ANTES DE FACTURARLO.
+ *
+ * El candado que evita que dos computadoras emitan dos facturas por la misma venta. No es
+ * un chequeo previo —eso es justamente lo que no alcanzaba— sino una escritura condicional:
+ * el UPDATE lleva adentro la condición de que nadie lo haya tomado. La base resuelve el
+ * empate, que es el único lugar donde se puede resolver de verdad. Si dos PCs lo intentan
+ * en el mismo instante, la segunda espera a que la primera termine, vuelve a mirar la fila
+ * ya cambiada, y no actualiza ninguna: se entera antes de hablar con ARCA.
+ *
+ * `forzar` saca la condición de "que nadie lo tenga tomado", para cuando una computadora se
+ * apagó a mitad y dejó el candado puesto. Lo que NUNCA se saca es la condición de que el
+ * pedido no esté facturado: eso no se fuerza ni a mano.
+ */
+export async function tomarPedido(id, pc, { forzar = false } = {}) {
+  const filtros = [`id=eq.${id}`, "invoice_cae=is.null"];
+  if (!forzar) filtros.push("invoice_claim=is.null");
+  const r = await req(`orders?${filtros.join("&")}`, {
+    method: "PATCH",
+    headers: { Prefer: "return=representation" },
+    body: JSON.stringify({ invoice_claim: pc || "PC", invoice_claimed_at: new Date().toISOString() }),
+  });
+  if (!r.ok) throw new Error(`tomarPedido: la nube respondió ${r.status}`);
+  const filas = await r.json().catch(() => []);
+  return { tomado: Array.isArray(filas) && filas.length > 0 };
+}
+
+/** Suelta el pedido. Se llama siempre al terminar, salga bien o mal la emisión. */
+export async function liberarPedido(id) {
+  const r = await req(`orders?id=eq.${id}`, {
+    method: "PATCH",
+    headers: { Prefer: "return=minimal" },
+    body: JSON.stringify({ invoice_claim: null, invoice_claimed_at: null }),
+  });
+  if (!r.ok) throw new Error(`liberarPedido: la nube respondió ${r.status}`);
+}
+
 // ---- Token de ARCA compartido entre PCs ----
 // El TA (token+sign) dura ~12h y ARCA da uno solo por certificado. Lo guardamos en
 // la nube para que todas las PCs reusen el mismo y ninguna quede sin poder conectarse.
@@ -176,7 +215,7 @@ export async function fetchToken(service) {
   return rows[0] || null;
 }
 export async function saveToken(service, ticket, pc) {
-  await req("facturador_token", {
+  const r = await req("facturador_token", {
     method: "POST",
     headers: { Prefer: "resolution=merge-duplicates" },
     body: JSON.stringify({
@@ -188,6 +227,11 @@ export async function saveToken(service, ticket, pc) {
       updated_at: new Date().toISOString(),
     }),
   });
+  // Sin este chequeo, una PC que renovó el token creía haberlo publicado aunque la nube
+  // hubiera rechazado la escritura, y las otras dos se quedaban con el viejo. Quien llama
+  // ya trata esto como best-effort (`.catch(() => {})`): lo que cambia es que ahora falla
+  // a la vista en vez de en silencio.
+  if (!r.ok) throw new Error(`saveToken: la nube respondió ${r.status}`);
 }
 
 export async function pushFactura(rec, pc) {
