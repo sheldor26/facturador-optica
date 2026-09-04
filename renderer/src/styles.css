@@ -370,7 +370,8 @@ table.items input.num { width: 100%; text-align: right; font-variant-numeric: ta
 
 /* ---- Sancor: tabla de preliquidaciones responsiva (evita superposición de números) ---- */
 .tabla-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-.sancor-tabla { min-width: 640px; }
+.sancor-tabla { min-width: 640px; table-layout: auto; } /* .items trae table-layout:fixed + anchos por columna pensados para Cant./Precio/Desc.% de Emitir-Presupuestos; acá las columnas son otras (Total/IVA/A facturar/Estado) y quedaban aplastadas */
+table.sancor-tabla th:nth-child(n+2), table.sancor-tabla td:nth-child(n+2) { width: auto; } /* misma especificidad que table.items para poder pisar esos anchos fijos heredados */
 .sancor-tabla th, .sancor-tabla td { white-space: nowrap; vertical-align: middle; }
 .sancor-tabla td:first-child, .sancor-tabla th:first-child { white-space: normal; min-width: 150px; } /* el nombre del archivo sí puede cortar */
 .sancor-tabla .num { text-align: right; font-variant-numeric: tabular-nums; }
