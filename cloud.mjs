@@ -221,6 +221,12 @@ const ML_DOCUMENT_TYPE = {
  * precio) si los encuentra. `null` si esa venta todavía no está sincronizada del lado
  * de la web, o si no tiene comprobante vinculado (venta reciente, ARCA no la autorizó
  * todavía) — en ese caso el que llama sigue mostrando el cartel de "no disponible".
+ *
+ * OJO: puede haber MÁS DE UNA venta con el mismo comprobante — MercadoLibre a veces junta
+ * varias ventas del mismo pack en una sola factura (visto con datos reales: Factura A
+ * 00006-00000048 son 4 ventas distintas). Por eso se juntan los renglones de TODAS las
+ * filas que matchean, no solo la primera — si no, el total de la factura no coincide con
+ * lo que se muestra y faltan productos.
  */
 export async function buscarItemsML(ptoVta, numero, clase, tipo) {
   const documentType = ML_DOCUMENT_TYPE[`${clase}-${tipo}`];
@@ -232,7 +238,8 @@ export async function buscarItemsML(ptoVta, numero, clase, tipo) {
     );
     if (!r.ok) return null;
     const rows = await r.json();
-    return rows[0]?.marketplace_order_items || null;
+    const items = rows.flatMap((f) => f.marketplace_order_items || []);
+    return items.length ? items : null;
   } catch { return null; } // best-effort: sin nube, sigue con el cartel de "no disponible"
 }
 

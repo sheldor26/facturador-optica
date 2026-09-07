@@ -14,6 +14,7 @@ export default function MercadoLibre() {
   const [loading, setLoading] = useState(true);
   const [sincronizando, setSincronizando] = useState(false);
   const [imprimiendo, setImprimiendo] = useState(false);
+  const [viendoId, setViendoId] = useState(null);
   const [ptoVta, setPtoVta] = useState(6);
   const [ultimoResultado, setUltimoResultado] = useState(null);
   const [progreso, setProgreso] = useState(null);
@@ -98,6 +99,15 @@ export default function MercadoLibre() {
     finally { setImprimiendo(false); }
   }
 
+  // Abre el comprobante para mirarlo (con el detalle real de MercadoLibre si ya se pudo
+  // cruzar) sin pasar por la selección ni por "Imprimir" — un solo click por fila.
+  async function ver(f) {
+    setViendoId(f.id);
+    try { await window.api.mercadolibreImprimirResumen([f.id]); }
+    catch (e) { setUltimoResultado({ ok: false, error: e?.message || String(e) }); }
+    finally { setViendoId(null); }
+  }
+
   return (
     <>
       <header className="topbar"><h1>MercadoLibre</h1></header>
@@ -168,14 +178,14 @@ export default function MercadoLibre() {
             <th className="th-sort" onClick={() => setOrdenFecha((o) => (o === "asc" ? "desc" : "asc"))} title="Ordenar por fecha">
               Fecha {ordenFecha === "asc" ? "▲" : "▼"}
             </th>
-            <th>Documento</th><th className="r">Total</th><th>CAE</th><th>Revisado</th>
+            <th>Documento</th><th className="r">Total</th><th>CAE</th><th>Revisado</th><th></th>
           </tr>
         </thead>
         <tbody>
           {loading ? (
-            <tr><td colSpan="7" className="empty"><span className="spin-row"><span className="spinner" /> Cargando…</span></td></tr>
+            <tr><td colSpan="8" className="empty"><span className="spin-row"><span className="spinner" /> Cargando…</span></td></tr>
           ) : visibles.length === 0 ? (
-            <tr><td colSpan="7" className="empty">
+            <tr><td colSpan="8" className="empty">
               {items.length === 0 ? "Todavía no se trajo ningún comprobante. Tocá \"Sincronizar con ARCA\"." : "No hay pendientes de controlar."}
             </td></tr>
           ) : (
@@ -188,6 +198,7 @@ export default function MercadoLibre() {
                 <td className="r">{money(f.total)}</td>
                 <td className="cae">{f.cae || "—"}</td>
                 <td><input type="checkbox" checked={!!f.revisado} onChange={() => toggleRevisado(f)} title="Ya lo controlé contra la venta en MercadoLibre" /></td>
+                <td><button className="ghost mini" disabled={viendoId === f.id} onClick={() => ver(f)}>{viendoId === f.id ? "Abriendo…" : "Ver"}</button></td>
               </tr>
             ))
           )}
