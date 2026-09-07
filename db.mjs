@@ -137,13 +137,20 @@ export function guardarFacturaML(rec) {
 }
 
 /** Lista los comprobantes de MercadoLibre ya traídos (más nuevos primero). */
-export function listarFacturasML({ q = "", limit = 500 } = {}) {
+export function listarFacturasML({ q = "", limit = 20000 } = {}) {
   let arr = data.mercadolibre;
   if (q) {
     const s = String(q).toLowerCase();
     arr = arr.filter((f) => String(f.docNro || "").includes(s) || String(f.numero).includes(s) || (f.cae || "").includes(s));
   }
-  return arr.slice().reverse().slice(0, limit);
+  // Por fecha real (no por orden de guardado): la sincronización inicial carga cada tipo de
+  // comprobante en un bloque separado (todas las Facturas A, después las B, después las NC...),
+  // así que el orden en que quedaron guardados NO es el orden cronológico real. Ordenar acá por
+  // fecha es lo que evita que, al recortar con `limit`, se pierdan comprobantes de un tipo que
+  // se guardó primero pero que en realidad son de un mes reciente.
+  return arr.slice()
+    .sort((a, b) => b.fecha.localeCompare(a.fecha) || b.numero - a.numero)
+    .slice(0, limit);
 }
 
 /** Trae un comprobante de MercadoLibre por id (para armar el PDF de control). */
