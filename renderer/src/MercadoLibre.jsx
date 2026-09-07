@@ -4,6 +4,9 @@ const CLASE = { FACTURA: "Factura", NC: "Nota de Crédito", ND: "Nota de Débito
 const fmt = (s) => (s ? `${s.slice(6, 8)}/${s.slice(4, 6)}/${s.slice(0, 4)}` : "—");
 const money = (n) => "$ " + Number(n || 0).toLocaleString("es-AR", { minimumFractionDigits: 2 });
 const DOC_LABEL = { 80: "CUIT", 86: "CUIL", 96: "DNI", 99: "-" };
+const NOMBRE_MES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+const mesDe = (fecha) => fecha.slice(0, 6); // "YYYYMM"
+const labelMes = (ym) => `${NOMBRE_MES[Number(ym.slice(4, 6)) - 1]} ${ym.slice(0, 4)}`;
 
 export default function MercadoLibre() {
   const [items, setItems] = useState([]);
@@ -17,6 +20,7 @@ export default function MercadoLibre() {
   const [soloPendientes, setSoloPendientes] = useState(false);
   const [seleccion, setSeleccion] = useState(() => new Set());
   const [ordenFecha, setOrdenFecha] = useState("desc");
+  const [filtroMes, setFiltroMes] = useState("");
 
   useEffect(() => {
     window.api.getConfig?.().then((c) => setPtoVta(Number(c?.ptoVtaML) || 6)).catch(() => {});
@@ -63,11 +67,17 @@ export default function MercadoLibre() {
     catch { setItems((prev) => prev.map((x) => (x.id === f.id ? { ...x, revisado: !nuevo } : x))); } // no salió: revertir
   }
 
+  const meses = useMemo(() => {
+    const set = new Set(items.map((f) => mesDe(f.fecha)));
+    return [...set].sort().reverse();
+  }, [items]);
+
   const visibles = useMemo(() => {
-    const base = soloPendientes ? items.filter((f) => !f.revisado) : items;
+    let base = soloPendientes ? items.filter((f) => !f.revisado) : items;
+    if (filtroMes) base = base.filter((f) => mesDe(f.fecha) === filtroMes);
     const signo = ordenFecha === "asc" ? 1 : -1;
     return base.slice().sort((a, b) => signo * (a.fecha.localeCompare(b.fecha) || a.numero - b.numero));
-  }, [items, soloPendientes, ordenFecha]);
+  }, [items, soloPendientes, filtroMes, ordenFecha]);
 
   function toggleSeleccion(id) {
     setSeleccion((prev) => {
@@ -123,6 +133,15 @@ export default function MercadoLibre() {
       </div>
 
       <div className="toolbar" style={{ marginTop: -6 }}>
+        <label className="fld" style={{ maxWidth: 200 }}>
+          <span>Mes</span>
+          <select value={filtroMes} onChange={(e) => setFiltroMes(e.target.value)}>
+            <option value="">Todos</option>
+            {meses.map((ym) => (
+              <option key={ym} value={ym}>{labelMes(ym)}</option>
+            ))}
+          </select>
+        </label>
         <label className="chk-print" style={{ margin: 0 }}>
           <input type="checkbox" checked={soloPendientes} onChange={(e) => setSoloPendientes(e.target.checked)} />
           <span>Mostrar solo los que faltan controlar</span>
