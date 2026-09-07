@@ -65,5 +65,14 @@ contextBridge.exposeInMainWorld("api", {
   sancorAgregarFotos: (opts) => ipcRenderer.invoke("sancor:agregarFotos", opts),
   sancorGuardarFotos: (opts) => ipcRenderer.invoke("sancor:guardarFotos", opts),
   sancorNubeEstado: () => ipcRenderer.invoke("sancor:nubeEstado"),
+  mercadolibreListar: (q) => ipcRenderer.invoke("mercadolibre:listar", q),
+  mercadolibreSincronizar: (ptoVta) => ipcRenderer.invoke("mercadolibre:sincronizar", ptoVta),
+  mercadolibreOnProgreso: (cb) => {
+    const listener = (_e, info) => cb(info);
+    ipcRenderer.on("mercadolibre:progreso", listener);
+    return () => ipcRenderer.removeListener("mercadolibre:progreso", listener);
+  },
+  mercadolibreMarcarRevisado: (id, revisado) => ipcRenderer.invoke("mercadolibre:marcarRevisado", id, revisado),
+  mercadolibreImprimirResumen: (ids) => ipcRenderer.invoke("mercadolibre:imprimirResumen", ids),
   sancorDescargarMes: (opts) => ipcRenderer.invoke("sancor:descargarMes", opts),
 });

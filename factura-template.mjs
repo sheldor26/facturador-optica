@@ -485,3 +485,110 @@ export function renderFacturaHTML({ emisor, f, qrDataUrl, logoDataUrl, copias = 
 ${copias.map(cuerpo).join("\n")}
 </body></html>`;
 }
+
+// ===========================================================================
+//  Resumen de comprobantes de MercadoLibre (control interno, NO es una factura)
+// ---------------------------------------------------------------------------
+//  ARCA no guarda qué se vendió en cada comprobante, solo el total/receptor/CAE — así que
+//  esto NO reemplaza el comprobante original de MercadoLibre. Es un registro de control con
+//  los datos reales de ARCA (CAE y QR incluidos, ambos válidos y verificables), pensado para
+//  imprimir varios de una y controlarlos contra las ventas de MercadoLibre uno por uno.
+//  Una hoja por comprobante, todas en un solo PDF para imprimir de una sola vez.
+// ===========================================================================
+const DOC_LABEL_ML = { 80: "CUIT", 86: "CUIL", 96: "DNI", 99: null };
+
+export function renderResumenMLHTML({ emisor, comprobantes, logoDataUrl }) {
+  const CLASE_TXT = { FACTURA: "FACTURA", NC: "NOTA DE CRÉDITO", ND: "NOTA DE DÉBITO" };
+
+  const hoja = (c) => {
+    const docLabel = DOC_LABEL_ML[c.docTipo];
+    const receptorTxt = docLabel && c.docNro ? `${docLabel} ${esc(String(c.docNro))}` : "Consumidor Final (sin identificar)";
+    const numeroTxt = String(c.numero).padStart(8, "0");
+    const ptoVtaTxt = String(c.ptoVta).padStart(5, "0");
+    const esA = c.tipo === "A";
+
+    return `<div class="hoja-ml">
+      <div class="ml-doc">
+        <div class="ml-header">
+          <div class="ml-emisor">
+            ${logoDataUrl ? `<img src="${logoDataUrl}" alt="logo">` : ""}
+            <div>
+              <div class="nm">${esc(emisor.nombreFantasia)}</div>
+              <div class="dato">${esc(emisor.razonSocial)} · CUIT ${esc(emisor.cuit)}</div>
+            </div>
+          </div>
+          <div class="ml-tipo">
+            <div class="letra">${esA ? "A" : "B"}</div>
+            <div class="cod">Pto. Vta. ${ptoVtaTxt}</div>
+          </div>
+        </div>
+
+        <div class="ml-titulo">${CLASE_TXT[c.clase] || c.clase} ${esA ? "A" : "B"} N° ${numeroTxt}</div>
+        <div class="ml-grid">
+          <div><span>Fecha</span><b>${fmtFecha(c.fecha)}</b></div>
+          <div><span>Receptor</span><b>${receptorTxt}</b></div>
+          <div><span>Neto</span><b>$ ${num(c.neto)}</b></div>
+          <div><span>IVA</span><b>$ ${num(c.iva)}</b></div>
+          <div class="total"><span>Importe Total</span><b>$ ${num(c.total)}</b></div>
+        </div>
+
+        <div class="ml-cae">
+          <div><span>CAE</span><b>${esc(c.cae || "-")}</b></div>
+          <div><span>Vencimiento CAE</span><b>${c.caeVencimiento ? fmtFecha(c.caeVencimiento) : "-"}</b></div>
+        </div>
+
+        <div class="ml-qr"><img src="${c.qrDataUrl}" alt="QR"></div>
+
+        <div class="ml-disclaimer">
+          <b>Documento de control interno — no es el comprobante original.</b> Se armó con los
+          datos que ARCA tiene registrados de este comprobante (emitido por MercadoLibre con
+          el mismo CUIT). El CAE y el código QR son los reales y verificables en
+          <span>arca.gob.ar</span>; el detalle de productos vendidos no figura acá porque ARCA
+          no lo guarda — para eso, consultar el comprobante en MercadoLibre.
+        </div>
+      </div>
+    </div>`;
+  };
+
+  return `<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><title>Comprobantes MercadoLibre</title>
+<style>
+  :root { --brand: #16243f; --line: #16243f; --muted: #5a6473; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #eef0f3; font-family: Arial, Helvetica, sans-serif; color: #111; }
+  .hoja-ml { width: 210mm; height: 297mm; margin: 12px auto; background: #fff; padding: 14mm; break-after: page; page-break-after: always; }
+  .hoja-ml:last-child { break-after: auto; page-break-after: auto; }
+  .ml-doc { border: 1.3px solid var(--brand); border-radius: 4px; padding: 18px 22px; height: 100%; display: flex; flex-direction: column; }
+
+  .ml-header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px solid var(--line); padding-bottom: 12px; }
+  .ml-emisor { display: flex; align-items: center; gap: 12px; }
+  .ml-emisor img { height: 46px; width: auto; }
+  .ml-emisor .nm { font-size: 16px; font-weight: bold; color: var(--brand); }
+  .ml-emisor .dato { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .ml-tipo { border: 1px solid var(--brand); border-radius: 4px; text-align: center; padding: 5px 14px; }
+  .ml-tipo .letra { font-size: 26px; font-weight: bold; color: var(--brand); line-height: 1; }
+  .ml-tipo .cod { font-size: 8.5px; color: var(--muted); margin-top: 2px; }
+
+  .ml-titulo { font-size: 15px; font-weight: bold; color: var(--brand); letter-spacing: .5px; margin: 18px 0 14px; }
+  .ml-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 24px; font-size: 12.5px; }
+  .ml-grid span { display: block; font-size: 9.5px; text-transform: uppercase; letter-spacing: .4px; color: var(--muted); margin-bottom: 2px; }
+  .ml-grid .total { grid-column: 1 / -1; border-top: 1px dashed var(--line); padding-top: 10px; margin-top: 4px; }
+  .ml-grid .total b { font-size: 20px; color: var(--brand); }
+
+  .ml-cae { display: flex; gap: 36px; margin-top: 18px; font-size: 12px; }
+  .ml-cae span { display: block; font-size: 9.5px; text-transform: uppercase; color: var(--muted); margin-bottom: 2px; }
+
+  .ml-qr { text-align: center; margin-top: 20px; }
+  .ml-qr img { width: 130px; height: 130px; }
+
+  .ml-disclaimer { margin-top: auto; padding-top: 14px; border-top: 1px solid var(--line); font-size: 9px; color: var(--muted); line-height: 1.5; }
+  .ml-disclaimer b { color: #111; }
+  .ml-disclaimer span { color: var(--brand); font-weight: bold; }
+
+  @page { size: A4; margin: 0; }
+  @media print { html, body { background: #fff; } .hoja-ml { margin: 0; } }
+</style></head>
+<body>
+${comprobantes.map(hoja).join("\n")}
+</body></html>`;
+}

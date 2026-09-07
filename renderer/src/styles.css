@@ -119,6 +119,7 @@ h1, h2, h3 { letter-spacing: -.015em; }
 .pill.error { background: var(--err-bg); color: var(--err); }
 
 .alert { background: var(--err-bg); color: var(--err); padding: 12px 16px; border-radius: 10px; margin-bottom: 18px; font-size: 14px; border: 1px solid color-mix(in srgb, var(--err) 25%, transparent); }
+.alert-ok { background: var(--ok-bg); color: var(--ok); padding: 12px 16px; border-radius: 10px; margin-bottom: 18px; font-size: 14px; border: 1px solid color-mix(in srgb, var(--ok) 25%, transparent); }
 .alert button { margin-left: 10px; }
 
 /* ===== Cards ===== */
@@ -155,6 +156,8 @@ button.mini { padding: 6px 11px; font-size: 12px; }
 /* ===== Grid table ===== */
 .grid { width: 100%; border-collapse: collapse; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; font-size: 13.5px; box-shadow: var(--shadow); }
 .grid th { text-align: left; background: var(--surface-2); color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .5px; padding: 12px 16px; border-bottom: 1px solid var(--line); font-weight: 600; }
+.grid th.th-sort { cursor: pointer; user-select: none; }
+.grid th.th-sort:hover { color: var(--text-strong); }
 .grid td { padding: 12px 16px; border-bottom: 1px solid var(--line-soft); }
 .grid tr:last-child td { border-bottom: 0; }
 .grid tbody tr { transition: background .12s; }

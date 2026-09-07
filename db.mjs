@@ -18,6 +18,8 @@ export function initDb(file) {
   if (!data.clientes) data.clientes = [];
   if (!data.presupuestos) data.presupuestos = [];
   if (typeof data.pseq !== "number") data.pseq = 0;
+  if (!Array.isArray(data.mercadolibre)) data.mercadolibre = [];
+  if (!data.mlWatermark || typeof data.mlWatermark !== "object") data.mlWatermark = {}; // { [cbteTipo]: último número ya traído }
   return data;
 }
 
@@ -111,6 +113,51 @@ export function setFacturaPublicToken(id, token) {
 
 export function contarFacturas() {
   return data.facturas.length;
+}
+
+// ===========================================================================
+//  Comprobantes de MercadoLibre (traídos de ARCA, de solo lectura)
+// ---------------------------------------------------------------------------
+//  Viven en su propia lista — NUNCA en `data.facturas` — a propósito: esas ventas ya las
+//  liquida MercadoLibre por su cuenta, así que no deben sumar en el dashboard ni en Reportes.
+// ===========================================================================
+
+/** Último número ya traído de ARCA para un `cbteTipo` (0 si nunca se sincronizó). */
+export function getUltimoML(cbteTipo) { return data.mlWatermark[cbteTipo] || 0; }
+export function setUltimoML(cbteTipo, numero) { data.mlWatermark[cbteTipo] = numero; guardar(); }
+
+/** Guarda (o ignora si ya existe) un comprobante de MercadoLibre. Devuelve el id. */
+export function guardarFacturaML(rec) {
+  const key = `${rec.clase}-${rec.tipo}-${rec.ptoVta}-${rec.numero}`;
+  if (data.mercadolibre.some((f) => f.key === key)) return 0;
+  const id = ++data.seq;
+  data.mercadolibre.push({ id, key, ...rec });
+  guardar();
+  return id;
+}
+
+/** Lista los comprobantes de MercadoLibre ya traídos (más nuevos primero). */
+export function listarFacturasML({ q = "", limit = 500 } = {}) {
+  let arr = data.mercadolibre;
+  if (q) {
+    const s = String(q).toLowerCase();
+    arr = arr.filter((f) => String(f.docNro || "").includes(s) || String(f.numero).includes(s) || (f.cae || "").includes(s));
+  }
+  return arr.slice().reverse().slice(0, limit);
+}
+
+/** Trae un comprobante de MercadoLibre por id (para armar el PDF de control). */
+export function getFacturaML(id) {
+  return data.mercadolibre.find((f) => f.id === id) || null;
+}
+
+/** Marca (o desmarca) un comprobante de MercadoLibre como ya controlado a mano. */
+export function marcarRevisadoML(id, revisado) {
+  const f = data.mercadolibre.find((x) => x.id === id);
+  if (!f) return false;
+  f.revisado = !!revisado;
+  guardar();
+  return true;
 }
 
 /** Mezcla clientes de la nube: gana el más reciente (last-write-wins por fecha). */

@@ -9,6 +9,7 @@ import Pedidos from "./Pedidos.jsx";
 import Reportes from "./Reportes.jsx";
 import Clientes from "./Clientes.jsx";
 import Sancor from "./Sancor.jsx";
+import MercadoLibre from "./MercadoLibre.jsx";
 import Opciones from "./Opciones.jsx";
 
 const NAV = [
@@ -21,6 +22,7 @@ const NAV = [
   { key: "facturas", label: "Facturas emitidas" },
   { key: "clientes", label: "Clientes" },
   { key: "sancor", label: "Sancor" },
+  { key: "mercadolibre", label: "MercadoLibre" },
   { key: "reportes", label: "Reportes" },
   { key: "opciones", label: "Opciones" },
 ];
@@ -34,6 +36,7 @@ const PATHS = {
   pedidos: <><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z" /><path d="M3 6h18" /><path d="M16 10a4 4 0 0 1-8 0" /></>,
   clientes: <><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /></>,
   sancor: <><path d="M19 21V8l-7-5-7 5v13" /><path d="M9 21v-6h6v6" /><path d="M9 9h.01M15 9h.01" /></>,
+  mercadolibre: <><path d="M20.59 13.41 13.41 20.6a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" /><path d="M7 7h.01" /></>,
   reportes: <path d="M6 20v-5M12 20V8M18 20v-9" />,
   opciones: <><circle cx="12" cy="12" r="3" /><path d="M19 12a7 7 0 0 0-.1-1l2-1.6-2-3.4-2.3 1a7 7 0 0 0-1.7-1l-.4-2.5h-4l-.4 2.5a7 7 0 0 0-1.7 1l-2.3-1-2 3.4 2 1.6a7 7 0 0 0 0 2l-2 1.6 2 3.4 2.3-1a7 7 0 0 0 1.7 1l.4 2.5h4l.4-2.5a7 7 0 0 0 1.7-1l2.3 1 2-3.4-2-1.6a7 7 0 0 0 .1-1z" /></>,
 };
@@ -152,6 +155,7 @@ export default function App() {
         {view === "facturas" && <Facturas toast={toast} />}
         {view === "clientes" && <Clientes toast={toast} />}
         {view === "sancor" && <Sancor toast={toast} />}
+        {view === "mercadolibre" && <MercadoLibre />}
         {view === "reportes" && <Reportes toast={toast} />}
         {view === "opciones" && <Opciones />}
       </main>

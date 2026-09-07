@@ -13,10 +13,10 @@ import { Arca, CbteTipo, IvaTipo, DocTipo, CondicionIva, Concepto, Moneda, NOTA_
 // error de red es lo que permite saber si un comprobante salió o no (ver `autorizar`).
 import { ArcaWSFEError } from "@ramiidv/arca-facturacion";
 import { attachTokenPersistence, setTokensDir, saveTicket } from "./ta-store.mjs";
-import { renderFacturaHTML, renderPresupuestoHTML, codigoComprobante } from "./factura-template.mjs";
+import { renderFacturaHTML, renderPresupuestoHTML, codigoComprobante, renderResumenMLHTML } from "./factura-template.mjs";
 import { initDb, guardarFactura, listarFacturas, getFactura, contarFacturas, todasFacturas, guardarCliente as dbGuardarCliente, listarClientes, eliminarCliente as dbEliminarCliente, mergeClientes, mergeFacturas,
   guardarPresupuesto, listarPresupuestos as dbListarPresupuestos, getPresupuesto, marcarPresupuestoFacturado, eliminarPresupuesto as dbEliminarPresupuesto, todosPresupuestos, mergePresupuestos, proximoNumeroPresupuesto,
-  setFacturaPublicToken } from "./db.mjs";
+  setFacturaPublicToken, getUltimoML, setUltimoML, guardarFacturaML, listarFacturasML, getFacturaML, marcarRevisadoML } from "./db.mjs";
 import * as cloud from "./cloud.mjs";
 import * as gestion from "./gestion.mjs";
 
@@ -844,6 +844,103 @@ export async function emitirNota({ clase, facturaId }) {
 }
 
 // ===========================================================================
+//  MERCADOLIBRE: traer (solo lectura) lo que ya factura solo bajo el mismo CUIT
+// ---------------------------------------------------------------------------
+//  MercadoLibre emite sus propias facturas automáticas con el CUIT de la óptica, en un
+//  Punto de Venta propio (no el 00007 que usa este programa). Esas ventas ya las liquida
+//  MercadoLibre por su cuenta, así que estos comprobantes se guardan APARTE de
+//  `data.facturas` a propósito — nunca deben sumar en el dashboard ni en Reportes, solo
+//  sirven para verlos juntos acá. Nunca se emite nada: es pura consulta a ARCA
+//  (`FECompUltimoAutorizado` + `FECompConsultar`, los mismos métodos de solo lectura que ya
+//  usa el resto del programa), comprobante por comprobante, con un "hasta dónde ya
+//  llegamos" guardado por tipo para no volver a traer todo cada vez.
+const ML_TIPOS = [
+  { cbteTipo: CbteTipo.FACTURA_A, clase: "FACTURA", tipo: "A" },
+  { cbteTipo: CbteTipo.FACTURA_B, clase: "FACTURA", tipo: "B" },
+  { cbteTipo: CbteTipo.NOTA_CREDITO_A, clase: "NC", tipo: "A" },
+  { cbteTipo: CbteTipo.NOTA_CREDITO_B, clase: "NC", tipo: "B" },
+  { cbteTipo: CbteTipo.NOTA_DEBITO_A, clase: "ND", tipo: "A" },
+  { cbteTipo: CbteTipo.NOTA_DEBITO_B, clase: "ND", tipo: "B" },
+];
+const sleepCorto = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Trae de ARCA los comprobantes nuevos de MercadoLibre (Punto de Venta propio).
+ * La primera vez puede haber cientos/miles de comprobantes acumulados desde que ARCA
+ * empezó a autorizarlos, y se traen de a uno (ARCA no tiene "traer varios juntos"), así
+ * que puede tardar varios minutos — `onProgress` avisa cómo va para que la interfaz no
+ * parezca colgada.
+ */
+export async function sincronizarMercadoLibre(ptoVta, onProgress) {
+  await ensureTicket().catch(() => {});
+  let nuevas = 0;
+  const errores = [];
+  for (const t of ML_TIPOS) {
+    try {
+      const ultimo = await getArca().ultimoComprobante(ptoVta, t.cbteTipo);
+      const desde = getUltimoML(t.cbteTipo) + 1;
+      let hastaOk = desde - 1;
+      for (let n = desde; n <= ultimo; n++) {
+        try {
+          const r = await getArca().consultarComprobante(t.cbteTipo, ptoVta, n);
+          const g = r.ResultGet;
+          guardarFacturaML({
+            clase: t.clase, tipo: t.tipo, cbteTipo: t.cbteTipo, ptoVta, numero: n, fecha: g.CbteFch,
+            docTipo: g.DocTipo, docNro: g.DocNro,
+            neto: g.ImpNeto, iva: g.ImpIVA, total: g.ImpTotal,
+            cae: g.CodAutorizacion, caeVencimiento: g.FchVto,
+          });
+          nuevas++;
+          hastaOk = n;
+          onProgress?.({ clase: t.clase, tipo: t.tipo, actual: n, hasta: ultimo, nuevas });
+          await sleepCorto(120); // no ametrallar a ARCA si hay que traer muchos de una
+        } catch (e) {
+          // Corta ACÁ (no sigue con el próximo número): la numeración de ARCA es siempre
+          // correlativa sin huecos, así que un fallo puntual es de red/transitorio — mejor
+          // reintentar este mismo número la próxima vez que perderlo para siempre.
+          errores.push(`${t.clase} ${t.tipo} N° ${n}: ${e?.message || e}`);
+          break;
+        }
+      }
+      if (hastaOk >= desde) setUltimoML(t.cbteTipo, hastaOk);
+    } catch (e) {
+      errores.push(`${t.clase} ${t.tipo}: ${e?.message || e}`);
+    }
+  }
+  return { ok: true, nuevas, errores };
+}
+
+/** Lista los comprobantes de MercadoLibre ya traídos (no toca ARCA). */
+export function listarMercadoLibre(q) { return listarFacturasML({ q }); }
+
+/** Marca (o desmarca) un comprobante de MercadoLibre como controlado a mano, uno por uno. */
+export function marcarRevisadoMercadoLibre(id, revisado) { return marcarRevisadoML(id, revisado); }
+
+/**
+ * Arma el PDF de control de uno o varios comprobantes de MercadoLibre para imprimir de una
+ * sola vez (una hoja por comprobante). Incluye el QR real de ARCA — se reconstruye con los
+ * mismos datos que ya trajo `sincronizarMercadoLibre`, no hace falta volver a consultar ARCA.
+ */
+export async function resumenMercadoLibreHTML(ids) {
+  const emisor = getEmisor();
+  const cuit = Number(emisor.cuit);
+  const comprobantes = [];
+  for (const id of ids) {
+    const c = getFacturaML(id);
+    if (!c) continue;
+    const iso = `${c.fecha.slice(0, 4)}-${c.fecha.slice(4, 6)}-${c.fecha.slice(6, 8)}`;
+    const qrUrl = Arca.generateQRUrl({
+      fecha: iso, cuit, ptoVta: c.ptoVta, tipoCmp: c.cbteTipo, nroCmp: c.numero,
+      importe: c.total, moneda: "PES", ctz: 1,
+      tipoDocRec: c.docTipo, nroDocRec: c.docNro, codAut: Number(c.cae),
+    });
+    const qrDataUrl = await QRCode.toDataURL(qrUrl, { margin: 0, width: 240 });
+    comprobantes.push({ ...c, qrDataUrl });
+  }
+  return renderResumenMLHTML({ emisor, comprobantes, logoDataUrl: logoDataUrl() });
+}
+
+// ===========================================================================
 //  REVISAR QUE NO FALTE NINGÚN COMPROBANTE
 // ---------------------------------------------------------------------------
 //  El rescate de `autorizar` cubre el corte que pasa mientras el programa está
@@ -1112,7 +1209,7 @@ const CATALOGO_LENTES_DEFAULT = {
   ],
 };
 
-const CONFIG_DEFAULT = { carpetaFacturas: "", preguntarDonde: false, autoImprimir: true, impresora: "", dialogoImpresion: false, ptoVta: 7, catalogoLentes: CATALOGO_LENTES_DEFAULT };
+const CONFIG_DEFAULT = { carpetaFacturas: "", preguntarDonde: false, autoImprimir: true, impresora: "", dialogoImpresion: false, ptoVta: 7, ptoVtaML: 6, catalogoLentes: CATALOGO_LENTES_DEFAULT };
 /** Punto de venta configurado (por defecto 7). */
 export function getPtoVta() { return Number(_config?.ptoVta) || 7; }
 let _configPath, _config;

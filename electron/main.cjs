@@ -503,6 +503,29 @@ ipcMain.handle("sancor:emitirFactura", async (_e, { anio, mes, tipo, monto }) =>
 ipcMain.handle("sancor:abrirCarpeta", async (_e, carpeta) => { await shell.openPath(carpeta); return true; });
 ipcMain.handle("sancor:nubeEstado", async () => { try { return await (await cloud()).nubeDisponible(); } catch { return false; } });
 
+// ---- MercadoLibre (solo lectura: trae de ARCA lo que ML ya factura solo) ----
+ipcMain.handle("mercadolibre:listar", async (_e, q) => (await engine()).listarMercadoLibre(q));
+ipcMain.handle("mercadolibre:sincronizar", async (_e, ptoVta) => {
+  const eng = await engine();
+  return eng.sincronizarMercadoLibre(Number(ptoVta), (info) => {
+    _e.sender.send("mercadolibre:progreso", info);
+  });
+});
+ipcMain.handle("mercadolibre:marcarRevisado", async (_e, id, revisado) => (await engine()).marcarRevisadoMercadoLibre(id, revisado));
+// Arma un solo PDF (una hoja por comprobante) y lo abre para que se imprima a mano desde
+// el visor: con varios comprobantes de una vez, es mejor dejar que el usuario elija
+// impresora/cantidad de copias en el diálogo nativo, no mandarlo derecho a imprimir.
+ipcMain.handle("mercadolibre:imprimirResumen", async (_e, ids) => {
+  const eng = await engine();
+  const html = await eng.resumenMercadoLibreHTML(ids);
+  const cfg = eng.getConfig();
+  fs.mkdirSync(cfg.carpetaFacturas, { recursive: true });
+  const outPath = path.join(cfg.carpetaFacturas, `mercadolibre_control_${Date.now()}.pdf`);
+  await htmlToPdf(html, outPath);
+  await shell.openPath(outPath);
+  return outPath;
+});
+
 // Elegí fotos por diálogo (orden + receta): comprime, guarda local y sube a la nube.
 // La carpeta se calcula desde año/mes/tipo.
 ipcMain.handle("sancor:agregarFotos", async (_e, { anio, mes, tipo }) => {

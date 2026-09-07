@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
 const CLASE = { FACTURA: "Factura", NC: "Nota de Crédito", ND: "Nota de Débito" };
 const fmt = (s) => `${s.slice(6, 8)}/${s.slice(4, 6)}/${s.slice(0, 4)}`;
@@ -16,6 +16,7 @@ export default function Facturas({ toast }) {
   const [cdest, setCdest] = useState("");
   const [link, setLink] = useState(null); // link público ya generado (medio "link")
   const [generandoLink, setGenerandoLink] = useState(false);
+  const [ordenFecha, setOrdenFecha] = useState("desc"); // desc = más nueva primero (como venía por defecto)
   const emitiendoRef = useRef(false); // guard síncrono anti doble-emisión (NC/ND)
 
   async function cargar(query = "") {
@@ -24,6 +25,11 @@ export default function Facturas({ toast }) {
     finally { setLoading(false); }
   }
   useEffect(() => { cargar(); }, []);
+
+  const itemsOrdenados = useMemo(() => {
+    const signo = ordenFecha === "asc" ? 1 : -1;
+    return items.slice().sort((a, b) => signo * (a.fecha.localeCompare(b.fecha) || a.numero - b.numero));
+  }, [items, ordenFecha]);
 
   async function imprimir(id) {
     try {
@@ -93,15 +99,21 @@ export default function Facturas({ toast }) {
 
       <table className="grid">
         <thead>
-          <tr><th>Comprobante</th><th>Fecha</th><th>Cliente</th><th className="r">Total</th><th>CAE</th><th></th></tr>
+          <tr>
+            <th>Comprobante</th>
+            <th className="th-sort" onClick={() => setOrdenFecha((o) => (o === "asc" ? "desc" : "asc"))} title="Ordenar por fecha">
+              Fecha {ordenFecha === "asc" ? "▲" : "▼"}
+            </th>
+            <th>Cliente</th><th className="r">Total</th><th>CAE</th><th></th>
+          </tr>
         </thead>
         <tbody>
           {loading ? (
             <tr><td colSpan="6" className="empty"><span className="spin-row"><span className="spinner" /> Cargando…</span></td></tr>
-          ) : items.length === 0 ? (
+          ) : itemsOrdenados.length === 0 ? (
             <tr><td colSpan="6" className="empty">Sin comprobantes todavía.</td></tr>
           ) : (
-            items.map((f) => (
+            itemsOrdenados.map((f) => (
               <tr key={f.id}>
                 <td><b>{CLASE[f.clase] || f.clase} {f.tipo}</b> {String(f.pto_vta).padStart(5, "0")}-{String(f.numero).padStart(8, "0")}</td>
                 <td>{fmt(f.fecha)}</td>
