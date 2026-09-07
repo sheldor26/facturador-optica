@@ -13,7 +13,7 @@ import { Arca, CbteTipo, IvaTipo, DocTipo, CondicionIva, Concepto, Moneda, NOTA_
 // error de red es lo que permite saber si un comprobante salió o no (ver `autorizar`).
 import { ArcaWSFEError } from "@ramiidv/arca-facturacion";
 import { attachTokenPersistence, setTokensDir, saveTicket } from "./ta-store.mjs";
-import { renderFacturaHTML, renderPresupuestoHTML, codigoComprobante, renderResumenMLHTML } from "./factura-template.mjs";
+import { renderFacturaHTML, renderPresupuestoHTML, codigoComprobante } from "./factura-template.mjs";
 import { initDb, guardarFactura, listarFacturas, getFactura, contarFacturas, todasFacturas, guardarCliente as dbGuardarCliente, listarClientes, eliminarCliente as dbEliminarCliente, mergeClientes, mergeFacturas,
   guardarPresupuesto, listarPresupuestos as dbListarPresupuestos, getPresupuesto, marcarPresupuestoFacturado, eliminarPresupuesto as dbEliminarPresupuesto, todosPresupuestos, mergePresupuestos, proximoNumeroPresupuesto,
   setFacturaPublicToken, getUltimoML, setUltimoML, guardarFacturaML, listarFacturasML, getFacturaML, marcarRevisadoML } from "./db.mjs";
@@ -916,15 +916,59 @@ export function listarMercadoLibre(q) { return listarFacturasML({ q }); }
 /** Marca (o desmarca) un comprobante de MercadoLibre como controlado a mano, uno por uno. */
 export function marcarRevisadoMercadoLibre(id, revisado) { return marcarRevisadoML(id, revisado); }
 
+const SIN_DETALLE_ML = [{ codigo: "-", nota: true, desc: "COMPROBANTE EMITIDO POR MERCADOLIBRE — EL DETALLE DE LO VENDIDO NO QUEDÓ REGISTRADO EN ARCA" }];
+
+/**
+ * Arma el registro (misma forma que una factura real) a partir de un comprobante de ML ya
+ * guardado. Intenta completar el detalle real de productos buscándolo en la web de la óptica
+ * (Supabase, tabla `marketplace_orders` — ver `cloud.buscarItemsML`); si no lo encuentra (la
+ * venta todavía no está sincronizada del otro lado, o no hay nube), sigue con el cartel de
+ * "no disponible" en vez de trabar la impresión.
+ */
+async function comprobanteMLComoFactura(c) {
+  const docTipo = Number(c.docTipo);
+  const docNro = Number(c.docNro) || 0;
+
+  let items = SIN_DETALLE_ML;
+  const reales = await cloud.buscarItemsML(c.ptoVta, c.numero, c.clase, c.tipo).catch(() => null);
+  if (Array.isArray(reales) && reales.length) {
+    items = reales.map((r) => {
+      const precioUnit = (r.unit_price_cents || 0) / 100;
+      return {
+        codigo: "-", desc: r.title || "(sin título)", cantidad: r.quantity || 1, unidad: "unidades",
+        precioUnit, bonifPct: 0, bonifImp: 0, subtotal: precioUnit * (r.quantity || 1),
+      };
+    });
+  }
+
+  return {
+    clase: c.clase, tipo: c.tipo, ptoVta: c.ptoVta, numero: c.numero, fecha: c.fecha,
+    cae: c.cae, caeVencimiento: c.caeVencimiento,
+    receptor: {
+      docLabel: docTipo === DocTipo.CUIT ? "CUIT" : docTipo === DocTipo.DNI ? "DNI" : "CUIT/DNI",
+      docNro: docNro ? String(docNro) : "-",
+      nombre: "(no consta — vendido por MercadoLibre)",
+      condicion: "", domicilio: "-", condVenta: "-",
+    },
+    items,
+    importes: { neto: Number(c.neto) || 0, iva: Number(c.iva) || 0, otrosTributos: 0, total: Number(c.total) || 0 },
+  };
+}
+
 /**
  * Arma el PDF de control de uno o varios comprobantes de MercadoLibre para imprimir de una
- * sola vez (una hoja por comprobante). Incluye el QR real de ARCA — se reconstruye con los
- * mismos datos que ya trajo `sincronizarMercadoLibre`, no hace falta volver a consultar ARCA.
+ * sola vez (una hoja por comprobante), con el mismo diseño que una factura real de la óptica
+ * — así el contador y el control mensual lo reconocen de un vistazo. Incluye el QR real de
+ * ARCA, reconstruido con los mismos datos que ya trajo `sincronizarMercadoLibre` (no hace
+ * falta volver a consultar ARCA). No tiene el detalle de productos porque ARCA no lo guarda;
+ * el renglón de la tabla lo aclara en vez de dejarlo vacío.
  */
 export async function resumenMercadoLibreHTML(ids) {
   const emisor = getEmisor();
   const cuit = Number(emisor.cuit);
-  const comprobantes = [];
+  const logo = logoDataUrl();
+  let cabecera = null;
+  const cuerpos = [];
   for (const id of ids) {
     const c = getFacturaML(id);
     if (!c) continue;
@@ -935,9 +979,12 @@ export async function resumenMercadoLibreHTML(ids) {
       tipoDocRec: c.docTipo, nroDocRec: c.docNro, codAut: Number(c.cae),
     });
     const qrDataUrl = await QRCode.toDataURL(qrUrl, { margin: 0, width: 240 });
-    comprobantes.push({ ...c, qrDataUrl });
+    const f = await comprobanteMLComoFactura(c);
+    const html = renderFacturaHTML({ emisor, f, qrDataUrl, logoDataUrl: logo, copias: ["MERCADOLIBRE"] });
+    if (!cabecera) cabecera = html.slice(0, html.indexOf("<body>") + "<body>".length);
+    cuerpos.push(html.slice(html.indexOf("<body>") + "<body>".length, html.indexOf("</body>")));
   }
-  return renderResumenMLHTML({ emisor, comprobantes, logoDataUrl: logoDataUrl() });
+  return `${cabecera}\n${cuerpos.join("\n")}\n</body></html>`;
 }
 
 // ===========================================================================

@@ -205,6 +205,37 @@ export async function liberarPedido(id) {
   if (!r.ok) throw new Error(`liberarPedido: la nube respondió ${r.status}`);
 }
 
+// ---- Detalle real de una venta de MercadoLibre (por el número de comprobante) ----
+// `document_type` tal como lo manda MercadoLibre en `attributes.document_type` de
+// GET /users/{id}/invoices/orders/{order_id} — verificado contra la API el 07/09/2026
+// (factura_b confirmado con datos reales; el resto sigue la misma convención de ML).
+const ML_DOCUMENT_TYPE = {
+  "FACTURA-A": "factura_a", "FACTURA-B": "factura_b",
+  "NC-A": "nota_de_credito_a", "NC-B": "nota_de_credito_b",
+  "ND-A": "nota_de_debito_a", "ND-B": "nota_de_debito_b",
+};
+/**
+ * Busca en `marketplace_orders` (la sincronización de ventas de MercadoLibre en el
+ * Supabase de la óptica) la venta que le corresponde a un comprobante ya emitido, por
+ * Punto de Venta + número + tipo — y devuelve sus renglones reales (producto, cantidad,
+ * precio) si los encuentra. `null` si esa venta todavía no está sincronizada del lado
+ * de la web, o si no tiene comprobante vinculado (venta reciente, ARCA no la autorizó
+ * todavía) — en ese caso el que llama sigue mostrando el cartel de "no disponible".
+ */
+export async function buscarItemsML(ptoVta, numero, clase, tipo) {
+  const documentType = ML_DOCUMENT_TYPE[`${clase}-${tipo}`];
+  if (!documentType) return null;
+  try {
+    const r = await req(
+      `marketplace_orders?invoice_ptovta=eq.${ptoVta}&invoice_numero=eq.${numero}&invoice_document_type=eq.${documentType}` +
+      `&select=id,marketplace_order_items(title,quantity,unit_price_cents)`,
+    );
+    if (!r.ok) return null;
+    const rows = await r.json();
+    return rows[0]?.marketplace_order_items || null;
+  } catch { return null; } // best-effort: sin nube, sigue con el cartel de "no disponible"
+}
+
 // ---- Token de ARCA compartido entre PCs ----
 // El TA (token+sign) dura ~12h y ARCA da uno solo por certificado. Lo guardamos en
 // la nube para que todas las PCs reusen el mismo y ninguna quede sin poder conectarse.
