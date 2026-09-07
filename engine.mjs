@@ -676,7 +676,19 @@ export async function emitir({ receptorCond: condPedida, docNro, nombre, domicil
     }
   }
 
-  const condReceptorId = esCF ? CondicionIva.CONSUMIDOR_FINAL : map.cond;
+  /*
+   * CONSUMIDOR FINAL (id 5) YA NO ES VÁLIDO EN FACTURA B.
+   *
+   * Confirmado contra la tabla en vivo de ARCA (FEParamGetCondicionIvaReceptor) el
+   * 07/09/2026: hoy el id 5 (Consumidor Final) tiene Cmp_Clase "C/49" — nada de "B". Es la
+   * misma clase de cambio que ya había roto Monotributo en Factura B (ver el fix de más
+   * arriba, v1.0.23): ARCA movió otro código de lugar. El campo sigue siendo OPCIONAL hasta
+   * el 30/11/2026 (evento FEParamGetCondicionIvaReceptor, Code 39) — así que en vez de
+   * perseguir cuál id es válido hoy para "Consumidor Final" en B, directamente se omite el
+   * campo para ese caso. Antes de que existiera este campo, esto es lo que se mandaba
+   * siempre, y no hay ninguna Factura B que quede inválida por no mandarlo todavía.
+   */
+  const condReceptorId = esCF ? null : map.cond;
   const now = new Date();
   const fecha = Arca.formatDate(now); // YYYYMMDD
 
@@ -694,7 +706,7 @@ export async function emitir({ receptorCond: condPedida, docNro, nombre, domicil
     ImpIVA: impIVA,
     MonId: Moneda.PESOS,
     MonCotiz: 1,
-    CondicionIVAReceptorId: condReceptorId,
+    ...(condReceptorId != null ? { CondicionIVAReceptorId: condReceptorId } : {}),
     Iva: [{ Id: IvaTipo.IVA_21, BaseImp: impNeto, Importe: impIVA }],
   };
   const result = await autorizar({
@@ -773,9 +785,12 @@ export async function emitirNota({ clase, facturaId }) {
   const tipo = orig.tipo; // A | B
   const origCbteTipo = tipo === "A" ? CbteTipo.FACTURA_A : CbteTipo.FACTURA_B;
   const map = COND_MAP[orig.receptor?.condicion] || COND_MAP["Consumidor Final"];
-  // Responsable Monotributo se factura (y se nota) como Consumidor Final — ver el comentario
-  // largo en emitir(): ARCA no acepta el código de Monotributista en clase B/C-nota-de-B.
+  // Responsable Monotributo se nota como Consumidor Final — ver el comentario largo en
+  // emitir(). Y Consumidor Final (el id, no importa si llegó así de origen o por este
+  // downgrade) hoy tampoco es válido en Factura B: se omite el campo en vez de mandar un id
+  // que ARCA va a rechazar.
   const esMonotributoComoCF = orig.receptor?.condicion === "Responsable Monotributo";
+  const esCF = map.cond === CondicionIva.CONSUMIDOR_FINAL || esMonotributoComoCF;
 
   // Documento del receptor: copiado de la factura original tal cual quedó identificada
   // (CUIT, DNI, o anónima), no asumido por su condición de IVA — así una Factura B
@@ -798,7 +813,7 @@ export async function emitirNota({ clase, facturaId }) {
 
   const opts = {
     ptoVta: orig.ptoVta, docTipo, docNro: docNroNum,
-    condicionIva: esMonotributoComoCF ? CondicionIva.CONSUMIDOR_FINAL : map.cond,
+    condicionIva: esCF ? null : map.cond,
     items: lineItems,
     comprobanteOriginal: { tipo: origCbteTipo, ptoVta: orig.ptoVta, nro: orig.numero, fecha: orig.fecha },
   };
