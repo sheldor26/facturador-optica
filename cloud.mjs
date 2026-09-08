@@ -227,15 +227,17 @@ const ML_DOCUMENT_TYPE = {
  * Busca en `marketplace_orders` (la sincronización de ventas de MercadoLibre en el
  * Supabase de la óptica) la venta que le corresponde a un comprobante ya emitido, por
  * Punto de Venta + número + tipo — y devuelve sus renglones reales (producto, cantidad,
- * precio) si los encuentra. `null` si esa venta todavía no está sincronizada del lado
- * de la web, o si no tiene comprobante vinculado (venta reciente, ARCA no la autorizó
- * todavía) — en ese caso el que llama sigue mostrando el cartel de "no disponible".
+ * precio) y el nombre del comprador si los encuentra. `null` si esa venta todavía no
+ * está sincronizada del lado de la web, o si no tiene comprobante vinculado (venta
+ * reciente, ARCA no la autorizó todavía) — en ese caso el que llama sigue mostrando el
+ * cartel de "no disponible".
  *
  * OJO: puede haber MÁS DE UNA venta con el mismo comprobante — MercadoLibre a veces junta
  * varias ventas del mismo pack en una sola factura (visto con datos reales: Factura A
  * 00006-00000048 son 4 ventas distintas). Por eso se juntan los renglones de TODAS las
  * filas que matchean, no solo la primera — si no, el total de la factura no coincide con
- * lo que se muestra y faltan productos.
+ * lo que se muestra y faltan productos. El nombre se toma de la primera venta que lo
+ * tenga (lo normal es que todas sean del mismo comprador).
  */
 export async function buscarItemsML(ptoVta, numero, clase, tipo) {
   const documentType = ML_DOCUMENT_TYPE[`${clase}-${tipo}`];
@@ -243,12 +245,15 @@ export async function buscarItemsML(ptoVta, numero, clase, tipo) {
   try {
     const r = await req(
       `marketplace_orders?invoice_ptovta=eq.${ptoVta}&invoice_numero=eq.${numero}&invoice_document_type=eq.${documentType}` +
-      `&select=id,marketplace_order_items(title,quantity,unit_price_cents)`,
+      `&select=id,buyer_nombre,buyer_apellido,marketplace_order_items(title,quantity,unit_price_cents)`,
     );
     if (!r.ok) return null;
     const rows = await r.json();
     const items = rows.flatMap((f) => f.marketplace_order_items || []);
-    return items.length ? items : null;
+    if (!items.length) return null;
+    const conNombre = rows.find((f) => f.buyer_nombre || f.buyer_apellido);
+    const nombre = conNombre ? [conNombre.buyer_nombre, conNombre.buyer_apellido].filter(Boolean).join(" ") : null;
+    return { items, nombre };
   } catch { return null; } // best-effort: sin nube, sigue con el cartel de "no disponible"
 }
 

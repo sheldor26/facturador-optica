@@ -945,15 +945,17 @@ async function comprobanteMLComoFactura(c) {
   const docNro = Number(c.docNro) || 0;
 
   let items = SIN_DETALLE_ML;
-  const reales = await cloud.buscarItemsML(c.ptoVta, c.numero, c.clase, c.tipo).catch(() => null);
-  if (Array.isArray(reales) && reales.length) {
-    items = reales.map((r) => {
+  let nombre = "(no consta — vendido por MercadoLibre)";
+  const real = await cloud.buscarItemsML(c.ptoVta, c.numero, c.clase, c.tipo).catch(() => null);
+  if (real?.items?.length) {
+    items = real.items.map((r) => {
       const precioUnit = (r.unit_price_cents || 0) / 100;
       return {
         codigo: "-", desc: r.title || "(sin título)", cantidad: r.quantity || 1, unidad: "unidades",
         precioUnit, bonifPct: 0, bonifImp: 0, subtotal: precioUnit * (r.quantity || 1),
       };
     });
+    if (real.nombre) nombre = real.nombre;
   }
 
   return {
@@ -962,7 +964,7 @@ async function comprobanteMLComoFactura(c) {
     receptor: {
       docLabel: docTipo === DocTipo.CUIT ? "CUIT" : docTipo === DocTipo.DNI ? "DNI" : "CUIT/DNI",
       docNro: docNro ? String(docNro) : "-",
-      nombre: "(no consta — vendido por MercadoLibre)",
+      nombre,
       condicion: "", domicilio: "-", condVenta: "-",
     },
     items,
