@@ -207,8 +207,17 @@ export async function liberarPedido(id) {
 
 // ---- Detalle real de una venta de MercadoLibre (por el número de comprobante) ----
 // `document_type` tal como lo manda MercadoLibre en `attributes.document_type` de
-// GET /users/{id}/invoices/orders/{order_id} — verificado contra la API el 07/09/2026
-// (factura_b confirmado con datos reales; el resto sigue la misma convención de ML).
+// GET /users/{id}/invoices/orders/{order_id}. "factura_a"/"factura_b" confirmados con
+// datos reales (backfill de agosto 2026: 104/104 encontradas). Las de NC/ND quedan acá
+// con un valor adivinado que NUNCA va a matchear a propósito: revisando en vivo, ese
+// endpoint (que busca por ORDEN, no por comprobante) nunca devuelve un document_type de
+// nota de crédito/débito — de las más de 200 ventas del punto de venta 6 sincronizadas,
+// ninguna trajo otra cosa que factura_a/factura_b. Es esperable: una Nota de Crédito
+// corrige una factura ya emitida sobre la MISMA orden, y este endpoint parece devolver
+// siempre el comprobante "vigente" de la orden, no el historial — así que hoy no hay
+// forma de traer el detalle real para una Nota de Crédito/Débito por esta vía. Se deja
+// el mapeo igual (en vez de borrarlo) para no tener que redescubrir esto si el día de
+// mañana ML cambia el comportamiento.
 const ML_DOCUMENT_TYPE = {
   "FACTURA-A": "factura_a", "FACTURA-B": "factura_b",
   "NC-A": "nota_de_credito_a", "NC-B": "nota_de_credito_b",
