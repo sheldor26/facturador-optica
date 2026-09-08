@@ -22,6 +22,7 @@ export default function MercadoLibre() {
   const [seleccion, setSeleccion] = useState(() => new Set());
   const [ordenFecha, setOrdenFecha] = useState("desc");
   const [filtroMes, setFiltroMes] = useState("");
+  const [filtroClase, setFiltroClase] = useState("");
 
   useEffect(() => {
     window.api.getConfig?.().then((c) => setPtoVta(Number(c?.ptoVtaML) || 6)).catch(() => {});
@@ -76,9 +77,10 @@ export default function MercadoLibre() {
   const visibles = useMemo(() => {
     let base = soloPendientes ? items.filter((f) => !f.revisado) : items;
     if (filtroMes) base = base.filter((f) => mesDe(f.fecha) === filtroMes);
+    if (filtroClase) base = base.filter((f) => f.clase === filtroClase);
     const signo = ordenFecha === "asc" ? 1 : -1;
     return base.slice().sort((a, b) => signo * (a.fecha.localeCompare(b.fecha) || a.numero - b.numero));
-  }, [items, soloPendientes, filtroMes, ordenFecha]);
+  }, [items, soloPendientes, filtroMes, filtroClase, ordenFecha]);
 
   function toggleSeleccion(id) {
     setSeleccion((prev) => {
@@ -152,6 +154,15 @@ export default function MercadoLibre() {
             ))}
           </select>
         </label>
+        <label className="fld" style={{ maxWidth: 200 }}>
+          <span>Tipo</span>
+          <select value={filtroClase} onChange={(e) => setFiltroClase(e.target.value)}>
+            <option value="">Todos</option>
+            <option value="FACTURA">Solo facturas</option>
+            <option value="NC">Solo notas de crédito</option>
+            <option value="ND">Solo notas de débito</option>
+          </select>
+        </label>
         <label className="chk-print" style={{ margin: 0 }}>
           <input type="checkbox" checked={soloPendientes} onChange={(e) => setSoloPendientes(e.target.checked)} />
           <span>Mostrar solo los que faltan controlar</span>
@@ -165,6 +176,7 @@ export default function MercadoLibre() {
         ultimoResultado.ok
           ? <div className={ultimoResultado.errores?.length ? "alert" : "alert-ok"}>
               {ultimoResultado.nuevas > 0 ? `Se trajeron ${ultimoResultado.nuevas} comprobante(s) nuevo(s).` : "No había comprobantes nuevos."}
+              {ultimoResultado.reparadas > 0 ? ` Se completaron ${ultimoResultado.reparadas} nota(s) de crédito/débito viejas con la factura que corrigen.` : ""}
               {ultimoResultado.errores?.length ? ` Algunos tipos no se pudieron consultar: ${ultimoResultado.errores.join(" · ")}` : ""}
             </div>
           : <div className="alert">No se pudo completar: {ultimoResultado.error}</div>

@@ -136,6 +136,16 @@ export function guardarFacturaML(rec) {
   return id;
 }
 
+/** Completa un campo en un comprobante de MercadoLibre ya guardado (ej. `asoc`, agregado
+ * después). No pisa nada más del registro. */
+export function actualizarFacturaML(id, patch) {
+  const f = data.mercadolibre.find((x) => x.id === id);
+  if (!f) return false;
+  Object.assign(f, patch);
+  guardar();
+  return true;
+}
+
 /** Lista los comprobantes de MercadoLibre ya traídos (más nuevos primero). */
 export function listarFacturasML({ q = "", limit = 20000 } = {}) {
   let arr = data.mercadolibre;

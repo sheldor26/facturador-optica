@@ -16,7 +16,7 @@ import { attachTokenPersistence, setTokensDir, saveTicket } from "./ta-store.mjs
 import { renderFacturaHTML, renderPresupuestoHTML, codigoComprobante } from "./factura-template.mjs";
 import { initDb, guardarFactura, listarFacturas, getFactura, contarFacturas, todasFacturas, guardarCliente as dbGuardarCliente, listarClientes, eliminarCliente as dbEliminarCliente, mergeClientes, mergeFacturas,
   guardarPresupuesto, listarPresupuestos as dbListarPresupuestos, getPresupuesto, marcarPresupuestoFacturado, eliminarPresupuesto as dbEliminarPresupuesto, todosPresupuestos, mergePresupuestos, proximoNumeroPresupuesto,
-  setFacturaPublicToken, getUltimoML, setUltimoML, guardarFacturaML, listarFacturasML, getFacturaML, marcarRevisadoML } from "./db.mjs";
+  setFacturaPublicToken, getUltimoML, setUltimoML, guardarFacturaML, listarFacturasML, getFacturaML, marcarRevisadoML, actualizarFacturaML } from "./db.mjs";
 import * as cloud from "./cloud.mjs";
 import * as gestion from "./gestion.mjs";
 
@@ -880,6 +880,21 @@ const ML_TIPOS = [
 const sleepCorto = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /**
+ * La factura original que una Nota de Crédito/Débito corrige, si ARCA la tiene asociada
+ * (`CbtesAsoc`). Confirmado con datos reales el 08/09/2026: la NC B N° 67 trae asociada la
+ * Factura B N° 931 por el mismo importe exacto — con esto se puede mostrar en la nota el
+ * mismo producto/comprador reales que ya se resuelven para la factura (ver
+ * `comprobanteMLComoFactura`), en vez de dejarla siempre con el cartel de "no disponible".
+ */
+function comprobanteAsociado(g) {
+  const raw = g.CbtesAsoc?.CbteAsoc;
+  if (!raw) return null;
+  const a = Array.isArray(raw) ? raw[0] : raw;
+  if (!a) return null;
+  return { ptoVta: Number(a.PtoVta), numero: Number(a.Nro), cbteTipo: Number(a.Tipo) };
+}
+
+/**
  * Trae de ARCA los comprobantes nuevos de MercadoLibre (Punto de Venta propio).
  * La primera vez puede haber cientos/miles de comprobantes acumulados desde que ARCA
  * empezó a autorizarlos, y se traen de a uno (ARCA no tiene "traer varios juntos"), así
@@ -904,6 +919,7 @@ export async function sincronizarMercadoLibre(ptoVta, onProgress) {
             docTipo: g.DocTipo, docNro: g.DocNro,
             neto: g.ImpNeto, iva: g.ImpIVA, total: g.ImpTotal,
             cae: g.CodAutorizacion, caeVencimiento: g.FchVto,
+            asoc: comprobanteAsociado(g),
           });
           nuevas++;
           hastaOk = n;
@@ -922,7 +938,36 @@ export async function sincronizarMercadoLibre(ptoVta, onProgress) {
       errores.push(`${t.clase} ${t.tipo}: ${e?.message || e}`);
     }
   }
-  return { ok: true, nuevas, errores };
+  // Aprovecha la misma corrida para completar `asoc` en notas viejas que se guardaron antes
+  // de que se empezara a pedir ese dato (ver `repararAsociadosNotasML`) — así no hace falta
+  // un botón aparte, se pone al día solo la próxima vez que alguien sincronice.
+  const reparo = await repararAsociadosNotasML().catch(() => ({ reparadas: 0, errores: [] }));
+  return { ok: true, nuevas, reparadas: reparo.reparadas, errores: [...errores, ...reparo.errores] };
+}
+
+/**
+ * Completa `asoc` (la factura que corrige) en las Notas de Crédito/Débito de MercadoLibre
+ * que ya estaban guardadas de antes de que se empezara a pedir ese dato — si no, se quedan
+ * sin detalle para siempre aunque `sincronizarMercadoLibre` ya no las vuelva a tocar (son
+ * comprobantes viejos, no "nuevos"). Se corre una sola vez por PC; después no hay más
+ * comprobantes viejos sin `asoc` que reparar.
+ */
+export async function repararAsociadosNotasML() {
+  await ensureTicket().catch(() => {});
+  const faltantes = listarFacturasML({}).filter((f) => (f.clase === "NC" || f.clase === "ND") && f.asoc === undefined);
+  let reparadas = 0;
+  const errores = [];
+  for (const f of faltantes) {
+    try {
+      const r = await getArca().consultarComprobante(f.cbteTipo, f.ptoVta, f.numero);
+      actualizarFacturaML(f.id, { asoc: comprobanteAsociado(r.ResultGet) });
+      reparadas++;
+      await sleepCorto(120);
+    } catch (e) {
+      errores.push(`${f.clase} ${f.tipo} N° ${f.numero}: ${e?.message || e}`);
+    }
+  }
+  return { ok: true, faltantes: faltantes.length, reparadas, errores };
 }
 
 /** Lista los comprobantes de MercadoLibre ya traídos (no toca ARCA). */
@@ -944,9 +989,19 @@ async function comprobanteMLComoFactura(c) {
   const docTipo = Number(c.docTipo);
   const docNro = Number(c.docNro) || 0;
 
+  /*
+   * NC/ND: ARCA no guarda detalle de UNA Nota de Crédito/Débito — pero sí guarda a qué
+   * factura corrige (`asoc`, ver `comprobanteAsociado`). Esa factura sí tiene detalle real
+   * (confirmado con datos reales el 08/09/2026: la NC B N°67 corrige la Factura B N°931 por
+   * el mismo importe exacto). Así que para una nota se busca por el comprobante ASOCIADO,
+   * no por el propio — y se avisa de dónde salió, para no mostrarlo como si fuera de la nota.
+   */
+  const esNota = c.clase === "NC" || c.clase === "ND";
+  const buscarPor = esNota && c.asoc ? { ptoVta: c.asoc.ptoVta, numero: c.asoc.numero, clase: "FACTURA", tipo: c.tipo } : { ptoVta: c.ptoVta, numero: c.numero, clase: c.clase, tipo: c.tipo };
+
   let items = SIN_DETALLE_ML;
   let nombre = "(no consta — vendido por MercadoLibre)";
-  const real = await cloud.buscarItemsML(c.ptoVta, c.numero, c.clase, c.tipo).catch(() => null);
+  const real = await cloud.buscarItemsML(buscarPor.ptoVta, buscarPor.numero, buscarPor.clase, buscarPor.tipo).catch(() => null);
   if (real?.items?.length) {
     items = real.items.map((r) => {
       const precioUnit = (r.unit_price_cents || 0) / 100;
@@ -955,6 +1010,9 @@ async function comprobanteMLComoFactura(c) {
         precioUnit, bonifPct: 0, bonifImp: 0, subtotal: precioUnit * (r.quantity || 1),
       };
     });
+    if (esNota && c.asoc) {
+      items = [{ codigo: "-", nota: true, desc: `Corresponde a la Factura ${c.tipo} N° ${String(c.asoc.numero).padStart(8, "0")}, que esta nota corrige:` }, ...items];
+    }
     if (real.nombre) nombre = real.nombre;
   }
 
