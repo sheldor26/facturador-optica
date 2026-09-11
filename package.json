@@ -1,6 +1,6 @@
 {
   "name": "facturador-optica",
-  "version": "1.0.35",
+  "version": "1.0.36",
   "description": "",
   "main": "electron/main.cjs",
   "scripts": {

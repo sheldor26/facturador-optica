@@ -978,6 +978,24 @@ export function marcarRevisadoMercadoLibre(id, revisado) { return marcarRevisado
 
 const SIN_DETALLE_ML = [{ codigo: "-", nota: true, desc: "COMPROBANTE EMITIDO POR MERCADOLIBRE — EL DETALLE DE LO VENDIDO NO QUEDÓ REGISTRADO EN ARCA" }];
 
+/*
+ * CASOS PUNTUALES YA INVESTIGADOS A MANO, NO UNA FUNCIÓN GENERAL.
+ *
+ * Nota de Crédito B N°58 (08/09/2026): corrige la Factura B N°823, pero esa factura nunca
+ * aparece por ningún camino automático — MercadoLibre la reemplazó por la Factura A N°44 de
+ * la misma venta (mismo importe exacto, $92.999) al recategorizar al comprador de
+ * Consumidor Final a Responsable Inscripto, y su API de facturación solo expone la vigente.
+ * Confirmado con Juan que es la misma persona: el DNI de la nota (26498912) son los 8
+ * dígitos del medio del CUIT de la Factura A (23-26498912-4). Si en el futuro aparecen
+ * varios casos así, ahí sí conviene una tabla persistente — por ahora es un objeto a mano.
+ */
+const CORRECCIONES_MANUALES_ML = {
+  "NC-B-6-58": {
+    nombre: "Natalia Soledad Guerra",
+    items: [{ codigo: "-", desc: "ANTEOJOS MARCOS DE RECETA VULK STRAY FILTRO LUZ AZUL GAMER", cantidad: 1, unidad: "unidades", precioUnit: 92999, bonifPct: 0, bonifImp: 0, subtotal: 92999 }],
+  },
+};
+
 /**
  * Arma el registro (misma forma que una factura real) a partir de un comprobante de ML ya
  * guardado. Intenta completar el detalle real de productos buscándolo en la web de la óptica
@@ -998,22 +1016,28 @@ async function comprobanteMLComoFactura(c) {
    */
   const esNota = c.clase === "NC" || c.clase === "ND";
   const buscarPor = esNota && c.asoc ? { ptoVta: c.asoc.ptoVta, numero: c.asoc.numero, clase: "FACTURA", tipo: c.tipo } : { ptoVta: c.ptoVta, numero: c.numero, clase: c.clase, tipo: c.tipo };
+  const notaCorrige = esNota && c.asoc
+    ? [{ codigo: "-", nota: true, desc: `Corresponde a la Factura ${c.tipo} N° ${String(c.asoc.numero).padStart(8, "0")}, que esta nota corrige:` }]
+    : [];
 
   let items = SIN_DETALLE_ML;
   let nombre = "(no consta — vendido por MercadoLibre)";
-  const real = await cloud.buscarItemsML(buscarPor.ptoVta, buscarPor.numero, buscarPor.clase, buscarPor.tipo).catch(() => null);
-  if (real?.items?.length) {
-    items = real.items.map((r) => {
-      const precioUnit = (r.unit_price_cents || 0) / 100;
-      return {
-        codigo: "-", desc: r.title || "(sin título)", cantidad: r.quantity || 1, unidad: "unidades",
-        precioUnit, bonifPct: 0, bonifImp: 0, subtotal: precioUnit * (r.quantity || 1),
-      };
-    });
-    if (esNota && c.asoc) {
-      items = [{ codigo: "-", nota: true, desc: `Corresponde a la Factura ${c.tipo} N° ${String(c.asoc.numero).padStart(8, "0")}, que esta nota corrige:` }, ...items];
+  const manual = CORRECCIONES_MANUALES_ML[`${c.clase}-${c.tipo}-${c.ptoVta}-${c.numero}`];
+  if (manual) {
+    items = [...notaCorrige, ...manual.items];
+    nombre = manual.nombre;
+  } else {
+    const real = await cloud.buscarItemsML(buscarPor.ptoVta, buscarPor.numero, buscarPor.clase, buscarPor.tipo).catch(() => null);
+    if (real?.items?.length) {
+      items = [...notaCorrige, ...real.items.map((r) => {
+        const precioUnit = (r.unit_price_cents || 0) / 100;
+        return {
+          codigo: "-", desc: r.title || "(sin título)", cantidad: r.quantity || 1, unidad: "unidades",
+          precioUnit, bonifPct: 0, bonifImp: 0, subtotal: precioUnit * (r.quantity || 1),
+        };
+      })];
+      if (real.nombre) nombre = real.nombre;
     }
-    if (real.nombre) nombre = real.nombre;
   }
 
   return {

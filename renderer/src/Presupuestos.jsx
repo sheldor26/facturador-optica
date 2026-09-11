@@ -50,6 +50,11 @@ function Lista({ toast, onNuevo }) {
     } catch (e) { toast?.(e?.message || String(e), "error"); }
   }
 
+  async function ver(id) {
+    try { await window.api.verPresupuesto(id); }
+    catch (e) { toast?.(e?.message || String(e), "error"); }
+  }
+
   async function confirmarFacturar() {
     if (facturandoRef.current) return; // ya se está facturando: ignorar clics repetidos
     facturandoRef.current = true;
@@ -85,9 +90,12 @@ function Lista({ toast, onNuevo }) {
   async function confirmarCompartir() {
     setWorking(true);
     try {
-      await window.api.compartirPresupuesto({ id: compartir.id, medio: cmedio, destino: cdest });
+      const r = await window.api.compartirPresupuesto({ id: compartir.id, medio: cmedio, destino: cdest });
       setCompartir(null); setCdest("");
-      toast?.("Se abrió " + (cmedio === "whatsapp" ? "WhatsApp" : "el correo") + " y se mostró el PDF para adjuntar.");
+      const destinoTxt = cmedio === "whatsapp" ? "WhatsApp" : "el correo";
+      toast?.(r?.copiado
+        ? `Se abrió ${destinoTxt} y se copió el PDF — pegalo ahí con Ctrl+V.`
+        : `Se abrió ${destinoTxt} y se mostró el PDF para adjuntar.`);
     } catch (e) { toast?.(e?.message || String(e), "error"); }
     finally { setWorking(false); }
   }
@@ -132,6 +140,7 @@ function Lista({ toast, onNuevo }) {
                     : <span className="pill">Vigente</span>}
                 </td>
                 <td className="acciones">
+                  <button className="ghost mini" onClick={() => ver(p.id)}>Ver</button>
                   <button className="ghost mini" onClick={() => imprimir(p.id)}>Imprimir</button>
                   <button className="ghost mini" onClick={() => { setCompartir(p); setCmedio("whatsapp"); setCdest(""); }}>Compartir</button>
                   {p.estado !== "facturado" && !p.sinTotal && (
@@ -181,7 +190,7 @@ function Lista({ toast, onNuevo }) {
             <span>{cmedio === "whatsapp" ? "Teléfono (con cód. de país, ej. 5493756...)" : "Email del cliente"}</span>
             <input value={cdest} onChange={(e) => setCdest(e.target.value)} placeholder={cmedio === "whatsapp" ? "5493756123456" : "cliente@correo.com"} />
           </label>
-          <p className="hint-share">Se abre {cmedio === "whatsapp" ? "WhatsApp" : "el correo"} con el mensaje y se muestra el PDF para que lo adjuntes con un arrastre.</p>
+          <p className="hint-share">Se abre {cmedio === "whatsapp" ? "WhatsApp" : "el correo"} con el mensaje, y el PDF queda copiado — pegalo ahí con Ctrl+V.</p>
           <div className="modal-btns">
             <button className="ghost" onClick={() => setCompartir(null)} disabled={working}>Cancelar</button>
             <button onClick={confirmarCompartir} disabled={working}>{working ? "Abriendo…" : "Compartir"}</button>

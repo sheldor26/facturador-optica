@@ -7,6 +7,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const { pathToFileURL } = require("node:url");
 const { autoUpdater } = require("electron-updater");
+const { execFile } = require("node:child_process");
 
 const isDev = !app.isPackaged;
 
@@ -142,6 +143,27 @@ async function imprimirOAbrir(eng, html, outPath) {
   }
 }
 
+/*
+ * COPIA EL ARCHIVO EN SÍ AL PORTAPAPELES (no la ruta, no un texto): un Ctrl+V en WhatsApp,
+ * el mail, o donde sea, pega el PDF real. Así no hay que ir a buscarlo a mano entre todos
+ * los demás archivos de la carpeta de comprobantes.
+ *
+ * `Set-Clipboard -Path` es de PowerShell, que ya viene con Windows — no agrega ninguna
+ * dependencia nueva al instalador. Si falla (o esto corre en otro sistema operativo, como
+ * en desarrollo en Mac), se cae al plan anterior: mostrar el archivo en el explorador para
+ * arrastrarlo a mano. Nunca deja al que comparte sin ninguna forma de hacerlo.
+ */
+function copiarArchivoAlPortapapeles(outPath) {
+  return new Promise((resolve) => {
+    if (process.platform !== "win32") { shell.showItemInFolder(outPath); resolve(false); return; }
+    const ps = `Set-Clipboard -Path "${outPath.replace(/"/g, '`"')}"`;
+    execFile("powershell.exe", ["-NoProfile", "-Command", ps], (err) => {
+      if (err) shell.showItemInFolder(outPath); // no se pudo copiar: al menos mostrarlo
+      resolve(!err);
+    });
+  });
+}
+
 // ---- Puente IPC (la UI llama, el main ejecuta) ----
 ipcMain.handle("arca:serverStatus", async () => (await engine()).serverStatus());
 ipcMain.handle("arca:proximoNumero", async (_e, ptoVta, cbteTipo) => (await engine()).proximoNumero(ptoVta, cbteTipo));
@@ -233,8 +255,8 @@ ipcMain.handle("factura:compartir", async (_e, { id, medio, destino }) => {
   } else {
     await shell.openExternal(`mailto:${encodeURIComponent(destino || "")}?subject=${encodeURIComponent(comp)}&body=${encodeURIComponent(msg)}`);
   }
-  shell.showItemInFolder(outPath); // revela el PDF para adjuntarlo
-  return outPath;
+  const copiado = await copiarArchivoAlPortapapeles(outPath);
+  return { outPath, copiado };
 });
 // Sube el PDF del comprobante al bucket público "comprobantes" y devuelve el link directo,
 // para pegar en la tienda online (ej. el campo "Factura" de un pedido) o mandar por donde sea.
@@ -306,6 +328,23 @@ ipcMain.handle("presupuesto:crear", async (_e, opts) => (await engine()).crearPr
 ipcMain.handle("presupuestos:listar", async (_e, q) => (await engine()).listarPresupuestos(q));
 ipcMain.handle("presupuesto:facturar", async (_e, id) => (await engine()).facturarPresupuesto(id));
 ipcMain.handle("presupuesto:eliminar", async (_e, id) => { (await engine()).eliminarPresupuesto(id); return true; });
+// Abre el PDF del presupuesto para mirarlo (no manda a la impresora, ni pregunta dónde
+// guardar). Reusa el archivo ya guardado si existe; si no, lo genera. Mismo patrón que
+// `factura:ver`.
+ipcMain.handle("presupuesto:ver", async (_e, id) => {
+  const eng = await engine();
+  const row = eng.getPresupuesto(id);
+  if (!row) throw new Error("Presupuesto no encontrado");
+  const cfg = eng.getConfig();
+  const outPath = path.join(cfg.carpetaFacturas, eng.nombreArchivoPresupuesto(row.record));
+  if (!fs.existsSync(outPath)) {
+    const html = eng.presupuestoHTMLPorId(id, ["ORIGINAL"]);
+    fs.mkdirSync(cfg.carpetaFacturas, { recursive: true });
+    await htmlToPdf(html, outPath);
+  }
+  await shell.openPath(outPath);
+  return outPath;
+});
 ipcMain.handle("presupuesto:imprimir", async (_e, id) => {
   const eng = await engine();
   const row = eng.getPresupuesto(id);
@@ -348,8 +387,8 @@ ipcMain.handle("presupuesto:compartir", async (_e, { id, medio, destino }) => {
   } else {
     await shell.openExternal(`mailto:${encodeURIComponent(destino || "")}?subject=${encodeURIComponent("Presupuesto N° " + String(r.numero).padStart(8, "0"))}&body=${encodeURIComponent(msg)}`);
   }
-  shell.showItemInFolder(outPath);
-  return outPath;
+  const copiado = await copiarArchivoAlPortapapeles(outPath);
+  return { outPath, copiado };
 });
 
 // ---- Configuración inicial (importar certificado, etc.) ----
