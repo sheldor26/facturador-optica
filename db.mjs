@@ -81,7 +81,10 @@ export function guardarFactura(rec, creadoEn) {
 }
 
 /** Lista comprobantes (más nuevos primero), con búsqueda opcional. */
-export function listarFacturas({ q = "", limit = 200 } = {}) {
+// El tope de antes (200) dejaba afuera los meses viejos: con el filtro por mes de "Facturas
+// emitidas" hace falta ver TODO, y ordenado por fecha real (un comprobante recuperado de ARCA
+// se guarda al final aunque sea de hace semanas, así que el orden de guardado no sirve).
+export function listarFacturas({ q = "", limit = 20000 } = {}) {
   let arr = data.facturas;
   if (q) {
     const s = String(q).toLowerCase();
@@ -90,7 +93,7 @@ export function listarFacturas({ q = "", limit = 200 } = {}) {
       String(f.numero).includes(s) ||
       (f.cae || "").includes(s));
   }
-  return arr.slice().reverse().slice(0, limit).map((f) => ({
+  return arr.slice().sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)) || b.numero - a.numero).slice(0, limit).map((f) => ({
     id: f.id, clase: f.clase, tipo: f.tipo, pto_vta: f.ptoVta, numero: f.numero,
     fecha: f.fecha, total: f.total, receptor_nombre: f.receptorNombre, cae: f.cae,
   }));

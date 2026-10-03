@@ -4,6 +4,9 @@ const CLASE = { FACTURA: "Factura", NC: "Nota de Crédito", ND: "Nota de Débito
 const fmt = (s) => `${s.slice(6, 8)}/${s.slice(4, 6)}/${s.slice(0, 4)}`;
 const money = (n) => "$ " + Number(n).toLocaleString("es-AR", { minimumFractionDigits: 2 });
 const comp = (f) => `${CLASE[f.clase] || f.clase} ${f.tipo} ${String(f.pto_vta).padStart(5, "0")}-${String(f.numero).padStart(8, "0")}`;
+const NOMBRE_MES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+const mesDe = (fecha) => fecha.slice(0, 6); // "YYYYMM"
+const labelMes = (ym) => `${NOMBRE_MES[Number(ym.slice(4, 6)) - 1]} ${ym.slice(0, 4)}`;
 
 export default function Facturas({ toast }) {
   const [items, setItems] = useState([]);
@@ -17,6 +20,7 @@ export default function Facturas({ toast }) {
   const [link, setLink] = useState(null); // link público ya generado (medio "link")
   const [generandoLink, setGenerandoLink] = useState(false);
   const [ordenFecha, setOrdenFecha] = useState("desc"); // desc = más nueva primero (como venía por defecto)
+  const [filtroMes, setFiltroMes] = useState(""); // "" = todos los meses
   const emitiendoRef = useRef(false); // guard síncrono anti doble-emisión (NC/ND)
 
   async function cargar(query = "") {
@@ -26,10 +30,13 @@ export default function Facturas({ toast }) {
   }
   useEffect(() => { cargar(); }, []);
 
+  const meses = useMemo(() => [...new Set(items.map((f) => mesDe(f.fecha)))].sort().reverse(), [items]);
+
   const itemsOrdenados = useMemo(() => {
     const signo = ordenFecha === "asc" ? 1 : -1;
-    return items.slice().sort((a, b) => signo * (a.fecha.localeCompare(b.fecha) || a.numero - b.numero));
-  }, [items, ordenFecha]);
+    const base = filtroMes ? items.filter((f) => mesDe(f.fecha) === filtroMes) : items;
+    return base.slice().sort((a, b) => signo * (a.fecha.localeCompare(b.fecha) || a.numero - b.numero));
+  }, [items, ordenFecha, filtroMes]);
 
   async function imprimir(id) {
     try {
@@ -98,6 +105,13 @@ export default function Facturas({ toast }) {
           onKeyDown={(e) => e.key === "Enter" && cargar(q)}
         />
         <button onClick={() => cargar(q)}>Buscar</button>
+        <label className="fld" style={{ maxWidth: 200 }}>
+          <span>Mes</span>
+          <select value={filtroMes} onChange={(e) => setFiltroMes(e.target.value)}>
+            <option value="">Todos</option>
+            {meses.map((ym) => <option key={ym} value={ym}>{labelMes(ym)}</option>)}
+          </select>
+        </label>
       </div>
 
       <table className="grid">
