@@ -164,6 +164,18 @@ function copiarArchivoAlPortapapeles(outPath) {
   });
 }
 
+// Estampa un sello grande y visible en la parte vacía de abajo de la hoja (la factura ocupa
+// solo la parte de arriba), para marcas internas que no van en el comprobante en sí.
+function conSelloInterno(html, texto) {
+  // El sello pasa a ser lo último del body, y la plantilla solo le saca el salto de página a la
+  // hoja que es `:last-child` — sin esto saldría una segunda hoja en blanco.
+  const sello = `<style>.hoja{break-after:auto!important;page-break-after:auto!important}</style>` +
+    `<div style="position:absolute;left:0;right:0;top:205mm;text-align:center;z-index:10">` +
+    `<span style="display:inline-block;border:1.2mm solid #000;padding:4mm 14mm;font:900 26mm/1 Arial,Helvetica,sans-serif;` +
+    `letter-spacing:1mm;color:#000;transform:rotate(-4deg)">${texto}</span></div>`;
+  return html.replace("</body>", `${sello}</body>`);
+}
+
 // ---- Puente IPC (la UI llama, el main ejecuta) ----
 ipcMain.handle("arca:serverStatus", async () => (await engine()).serverStatus());
 ipcMain.handle("arca:proximoNumero", async (_e, ptoVta, cbteTipo) => (await engine()).proximoNumero(ptoVta, cbteTipo));
@@ -533,7 +545,25 @@ ipcMain.handle("sancor:emitirFactura", async (_e, { anio, mes, tipo, monto }) =>
     await htmlToPdf(html, outPath);
     let nube = null;
     try { nube = await cld.subirArchivo(objectPath(anio, mes, tipo, nombre), fs.readFileSync(outPath), "application/pdf"); } catch { nube = { ok: false }; }
-    return { ok: true, tipo, ptoVta: r.ptoVta, numero: r.numero, cae: r.cae, total: r.importes.total, pdf: outPath, nube };
+
+    /*
+     * Se imprime SOLO el duplicado (el original y el duplicado ya quedaron en el PDF
+     * archivado de arriba). En GRAV el duplicado lleva además un sello grande "IVA 10.5%"
+     * para el contador: es una marca interna que se imprime en el papel, NO forma parte del
+     * comprobante — el PDF archivado y lo que se sube a la nube salen sin sello.
+     * La factura ya está emitida y es real: si la impresión falla, no se la cuenta como error
+     * de emisión, solo se avisa (y se abre el PDF para imprimir a mano, igual que en el resto).
+     */
+    let duplicado = { impreso: false };
+    try {
+      let htmlDup = await eng.comprobanteHTMLPorId(res.id, ["DUPLICADO"]);
+      if (tipo === "GRAV") htmlDup = conSelloInterno(htmlDup, "IVA 10.5%");
+      const dupPath = path.join(os.tmpdir(), `sancor-duplicado-${r.ptoVta}-${r.numero}.pdf`);
+      await htmlToPdf(htmlDup, dupPath);
+      duplicado = await imprimirOAbrir(eng, htmlDup, dupPath);
+    } catch (e) { duplicado = { impreso: false, error: e?.message || String(e) }; }
+
+    return { ok: true, tipo, ptoVta: r.ptoVta, numero: r.numero, cae: r.cae, total: r.importes.total, pdf: outPath, nube, duplicado };
   } catch (e) {
     return { ok: false, tipo, error: e?.message || String(e) };
   }

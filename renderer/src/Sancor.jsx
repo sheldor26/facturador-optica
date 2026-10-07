@@ -173,8 +173,10 @@ export default function Sancor({ toast }) {
         try {
           const r = await window.api.sancorEmitirFactura({ anio, mes, tipo: f.resultado.tipo, monto: f.resultado.aFacturar });
           setEmisiones((prev) => ({ ...prev, [f.path]: r }));
-          if (r.ok) toast?.(`Factura B ${String(r.ptoVta).padStart(5, "0")}-${String(r.numero).padStart(8, "0")} emitida (${f.resultado.tipo})`);
-          else toast?.(`No se pudo emitir ${f.resultado.tipo}: ${r.error}`, "err");
+          if (r.ok) {
+            toast?.(`Factura B ${String(r.ptoVta).padStart(5, "0")}-${String(r.numero).padStart(8, "0")} emitida (${f.resultado.tipo})`);
+            if (r.duplicado && !r.duplicado.impreso) toast?.(`La factura ${f.resultado.tipo} se emitió pero el duplicado no se imprimió. Se abrió el PDF para imprimirlo a mano.`, "err");
+          } else toast?.(`No se pudo emitir ${f.resultado.tipo}: ${r.error}`, "err");
         } catch (e) {
           // Un fallo en una no debe cortar las demás.
           // Por mensajeHumano y no en crudo: acá también se emite por ARCA, y el aviso de
