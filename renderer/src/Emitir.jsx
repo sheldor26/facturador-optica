@@ -24,6 +24,8 @@ export default function Emitir() {
   const [impresion, setImpresion] = useState(null); // null=enviando · {impreso, error}
   const [errMsg, setErrMsg] = useState(null);
   const [imprimirOriginal, setImprimirOriginal] = useState(true);
+  const [precioSinIva, setPrecioSinIva] = useState(false); // cargar precios NETOS (solo Factura A)
+  const [desc10, setDesc10] = useState(false); // 10% de descuento a todos los renglones
   const [buscando, setBuscando] = useState(false);
   const [padronMsg, setPadronMsg] = useState(null);
   const [padronErr, setPadronErr] = useState(false);
@@ -78,16 +80,32 @@ export default function Emitir() {
   const esA = condEfectiva === "IVA Responsable Inscripto"; // solo RI recibe Factura A
   const tipo = esA ? "A" : "B";
 
+  // Precio sin IVA: solo tiene sentido en Factura A (la B muestra precios con IVA incluido).
+  const sinIva = precioSinIva && esA;
+  // Con la casilla del 10% todos los renglones llevan 10%; si no, el que cargó cada uno.
+  const pctDe = (it) => (desc10 ? 10 : Math.min(Math.max(Number(it.descPct) || 0, 0), 100));
+  const round2 = (n) => Math.round(n * 100) / 100;
+
   const totales = useMemo(() => {
-    // El precio que se ingresa es siempre FINAL (con IVA); el descuento (%) lo baja por línea.
-    const suma = items.filter((it) => !it.nota).reduce((acc, it) => {
+    const lineas = items.filter((it) => !it.nota);
+    if (sinIva) {
+      // Neto → menos descuento → más IVA sobre el neto. Mismo redondeo que el motor (engine.mjs),
+      // para que lo que se ve acá sea exactamente lo que sale en la factura.
+      const neto = lineas.reduce((acc, it) => {
+        const bruto = round2(Number(it.cantidad || 0) * Number(it.precioUnit || 0));
+        return round2(acc + round2(bruto - round2((bruto * pctDe(it)) / 100)));
+      }, 0);
+      const iva = round2(neto * RATE);
+      return { neto, iva, total: round2(neto + iva) };
+    }
+    // El precio que se ingresa es FINAL (con IVA); el descuento (%) lo baja por línea.
+    const suma = lineas.reduce((acc, it) => {
       const bruto = Number(it.cantidad || 0) * Number(it.precioUnit || 0);
-      const d = Math.min(Math.max(Number(it.descPct) || 0, 0), 100);
-      return acc + bruto * (1 - d / 100);
+      return acc + bruto * (1 - pctDe(it) / 100);
     }, 0);
     const neto = suma / (1 + RATE);
     return { neto, iva: suma - neto, total: suma };
-  }, [items]);
+  }, [items, sinIva, desc10]);
 
   const tbodyRef = useRef(null);
   const focusLast = useRef(false);
@@ -132,7 +150,7 @@ export default function Emitir() {
 
   function reset() {
     setReceptorCond("Consumidor Final"); setDocNro(""); setNombre(""); setDomicilio("");
-    setItems([itemVacio()]); setResult(null); setImpresion(null); setErrMsg(null); setStep("form");
+    setItems([itemVacio()]); setPrecioSinIva(false); setDesc10(false); setResult(null); setImpresion(null); setErrMsg(null); setStep("form");
     emitiendoRef.current = false;
   }
 
@@ -147,8 +165,9 @@ export default function Emitir() {
         docNro, nombre, domicilio, condVenta,
         items: itemsAEmitir.map((it) => (it.nota
           ? { desc: it.desc, nota: true }
-          : { desc: it.desc, cantidad: Math.max(0, Number(it.cantidad) || 0), precioUnit: Math.max(0, Number(it.precioUnit) || 0), unidad: it.unidad, descPct: Number(it.descPct) || 0 })),
+          : { desc: it.desc, cantidad: Math.max(0, Number(it.cantidad) || 0), precioUnit: Math.max(0, Number(it.precioUnit) || 0), unidad: it.unidad, descPct: pctDe(it) })),
         ptoVta,
+        precioSinIva: sinIva,
       });
       if (res.ok) {
         setResult(res); setImpresion(null); setStep("ok");
@@ -250,7 +269,7 @@ export default function Emitir() {
         <section className="panel">
           <h3>Ítems</h3>
           <table className="items">
-            <thead><tr><th>Descripción</th><th>Cant.</th><th>U. Medida</th><th>Precio (con IVA)</th><th>Desc. %</th><th></th></tr></thead>
+            <thead><tr><th>Descripción</th><th>Cant.</th><th>U. Medida</th><th>Precio ({sinIva ? "sin IVA" : "con IVA"})</th><th>Desc. %</th><th></th></tr></thead>
             <tbody ref={tbodyRef}>
               {items.map((it, i) => (it.nota ? (
                 <tr key={it._id} className="nota-row">
@@ -262,8 +281,8 @@ export default function Emitir() {
                   <td><input value={it.desc} onChange={(e) => setItem(i, { desc: e.target.value })} placeholder="Ej: Anteojo con graduación" /></td>
                   <td><input className="num" type="number" min="0" value={it.cantidad} onChange={(e) => setItem(i, { cantidad: e.target.value })} /></td>
                   <td><select value={it.unidad} onChange={(e) => setItem(i, { unidad: e.target.value })}>{U_MEDIDA.map((u) => <option key={u}>{u}</option>)}</select></td>
-                  <td><input className="num" type="number" min="0" step="0.01" value={it.precioUnit} onChange={(e) => setItem(i, { precioUnit: e.target.value })} placeholder="0,00" /></td>
-                  <td><input className="num" type="number" min="0" max="100" step="0.01" value={it.descPct} onChange={(e) => setItem(i, { descPct: e.target.value })} onKeyDown={(e) => onTabUltima(e, i)} placeholder="0" /></td>
+                  <td><input className="num" type="number" min="0" step="0.01" value={it.precioUnit} onChange={(e) => setItem(i, { precioUnit: e.target.value })} onKeyDown={(e) => desc10 && onTabUltima(e, i)} placeholder="0,00" /></td>
+                  <td><input className="num" type="number" min="0" max="100" step="0.01" value={desc10 ? 10 : it.descPct} disabled={desc10} onChange={(e) => setItem(i, { descPct: e.target.value })} onKeyDown={(e) => onTabUltima(e, i)} placeholder="0" /></td>
                   <td><button className="del" onClick={() => delItem(i)} title="Quitar">×</button></td>
                 </tr>
               )))}
@@ -273,6 +292,17 @@ export default function Emitir() {
             <button className="ghost" onClick={addItem}>+ Agregar producto</button>
             <button className="ghost" onClick={addNota}>+ Agregar nota (sin valor)</button>
           </div>
+
+          {esA && (
+            <label className="chk-print">
+              <input type="checkbox" checked={precioSinIva} onChange={(e) => setPrecioSinIva(e.target.checked)} />
+              <span>Cargo los precios <b>sin IVA</b> (el IVA 21% se suma al final, sobre el precio ya con descuento).</span>
+            </label>
+          )}
+          <label className="chk-print">
+            <input type="checkbox" checked={desc10} onChange={(e) => setDesc10(e.target.checked)} />
+            <span>Aplicar <b>10% de descuento</b> a todos los renglones.</span>
+          </label>
 
           <div className="tot-box">
             <div><span>Neto</span>{money(totales.neto)}</div>

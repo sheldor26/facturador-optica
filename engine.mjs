@@ -546,8 +546,9 @@ function revisarItems(items) {
  * Construye las líneas a mostrar y los importes (neto/IVA/total) a partir de los
  * ítems ingresados (precio FINAL con IVA). Lo usan tanto la emisión como el presupuesto.
  */
-function construirDetalle(items, tipo) {
+function construirDetalle(items, tipo, { precioSinIva = false } = {}) {
   revisarItems(items);
+  if (precioSinIva) return construirDetalleSinIva(items, tipo);
   const display = [];
   let impTotalFinal = 0; // total = exactamente lo que ingresó el cliente (precio FINAL con IVA)
   for (const it of items) {
@@ -571,6 +572,45 @@ function construirDetalle(items, tipo) {
   }
   const impNeto = round2(impTotalFinal / (1 + RATE));
   const impIVA = round2(impTotalFinal - impNeto);
+  return { display, impTotalFinal, impNeto, impIVA };
+}
+
+/**
+ * Igual que `construirDetalle`, pero el precio de cada renglón viene SIN IVA y el IVA se
+ * calcula al final, sobre el neto ya con descuento (es como lo hace a mano quien factura a
+ * un Responsable Inscripto: neto → menos descuento → más IVA). Por ejemplo, $100.000 con 10%
+ * de descuento da neto $90.000 + IVA $18.900 = $108.900.
+ *
+ * Acá el neto es lo que manda y el IVA es exactamente el 21% de ese neto, redondeado una sola
+ * vez; el total es neto + IVA. No se parte del total como en el otro camino, así que lo que
+ * figura en la factura coincide con la cuenta hecha a mano al centavo.
+ *
+ * Solo Factura A: la B muestra precios con IVA incluido, y mezclar los dos modos en un mismo
+ * comprobante daría renglones que no suman al total.
+ */
+function construirDetalleSinIva(items, tipo) {
+  if (tipo !== "A") {
+    throw new Error("Cargar los precios sin IVA solo se puede en una Factura A (Responsable Inscripto). Para Factura B los precios se cargan con IVA incluido.");
+  }
+  const display = [];
+  let impNeto = 0;
+  for (const it of items) {
+    if (it.nota) { display.push({ codigo: "-", desc: (it.desc || "").toUpperCase(), nota: true }); continue; }
+    const cant = Number(it.cantidad);
+    const precio = Number(it.precioUnit); // NETO, sin IVA
+    const descPct = Math.min(Math.max(Number(it.descPct) || 0, 0), 100);
+    const bruto = round2(cant * precio);
+    const bonif = round2((bruto * descPct) / 100);
+    const netoLinea = round2(bruto - bonif);
+    impNeto = round2(impNeto + netoLinea);
+    display.push({
+      codigo: it.codigo || "-", desc: (it.desc || "").toUpperCase(), cantidad: cant,
+      unidad: it.unidad || "Unidades", bonifPct: descPct, bonifImp: bonif,
+      precioUnit: precio, subtotal: netoLinea,
+    });
+  }
+  const impIVA = round2(impNeto * RATE);
+  const impTotalFinal = round2(impNeto + impIVA);
   return { display, impTotalFinal, impNeto, impIVA };
 }
 
@@ -632,7 +672,7 @@ function documentoDelReceptor(receptorCond, esCF, docNro) {
  * Para B el precio ingresado es FINAL (con IVA); para A es NETO (sin IVA).
  * Devuelve { ok, id, record, nombreArchivo } o { ok:false, observaciones }.
  */
-export async function emitir({ receptorCond: condPedida, docNro, nombre, domicilio, condVenta, items, ptoVta, origenPedidoId, totalEsperado }) {
+export async function emitir({ receptorCond: condPedida, docNro, nombre, domicilio, condVenta, items, ptoVta, origenPedidoId, totalEsperado, precioSinIva = false }) {
   await ensureTicket().catch(() => {});
   const receptorCond = condicionIva(condPedida);
   const map = COND_MAP[receptorCond];
@@ -651,7 +691,7 @@ export async function emitir({ receptorCond: condPedida, docNro, nombre, domicil
 
   // El IVA se deriva del total final para que NUNCA aparezca el centavo de más:
   // ImpNeto + ImpIVA == ImpTotal exacto. El IVA queda a <1 centavo del 21% (ARCA lo tolera).
-  const { display, impTotalFinal, impNeto, impIVA } = construirDetalle(items, tipo);
+  const { display, impTotalFinal, impNeto, impIVA } = construirDetalle(items, tipo, { precioSinIva });
   if (impTotalFinal <= 0) throw new Error(`El comprobante da un total de $${impTotalFinal}. No se puede facturar por cero.`);
 
   /*
